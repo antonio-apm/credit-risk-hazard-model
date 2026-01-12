@@ -1,0 +1,1686 @@
+---
+title: "Credit Risk Analysis: Retail Mortgage Loans"
+subtitle: "State-Dependent Logistic Hazard Model for Short-Term Default Prediction"
+author: "Antonio Melacini"
+date: "December 2025"
+output: pdf_document
+fontsize: 11pt
+header-includes: 
+  - \usepackage{bbm}
+---
+
+
+<!--  Math symbols -->
+\newcommand*{\T}{^{\top}}
+\newcommand*{\ind}{\overset{\text{ind}}{\sim}}
+\newcommand*{\iid}{\overset{iid}{\sim}}
+\newcommand*{\deq}{\overset{d}{=}}
+\newcommand*{\dconv}{\overset{d}{\rightarrow}}
+\newcommand*{\pconv}{\overset{p}{\rightarrow}}
+\newcommand*{\quant}{^{\leftarrow}}
+\newcommand*{\indep}{\perp\!\!\!\perp}
+\newcommand*{\F}{\mathcal{F}}
+<!-- Sets (natural numbers etc) -->
+\newcommand*{\IN}{\mathbb{N}} 
+\newcommand*{\IZ}{\mathbb{Z}}
+\newcommand*{\IQ}{\mathbb{Q}}
+\newcommand*{\IR}{\mathbb{R}}
+\newcommand*{\IC}{\mathbb{C}}
+<!-- Distributions, processes -->
+\newcommand*{\se}{\operatorname{se}}
+\newcommand*{\Geo}{\operatorname{Geo}}
+\newcommand*{\Exp}{\operatorname{Exp}}
+\newcommand*{\Poi}{\operatorname{Poisson}}
+\newcommand*{\NVM}{\operatorname{NVM}}
+\newcommand*{\Par}{\operatorname{Pareto}}
+\newcommand*{\IG}{\operatorname{IG}}
+\newcommand*{\LN}{\operatorname{LN}}
+\newcommand*{\Cauchy}{\operatorname{Cauchy}}
+\newcommand*{\U}{\mathcal{U}} 
+\newcommand*{\B}{\operatorname{B}}
+\newcommand*{\Bin}{\operatorname{Binomial}}
+\newcommand*{\Ber}{\operatorname{Bernoulli}}
+\newcommand*{\Beta}{\operatorname{Beta}}
+\newcommand*{\NB}{\operatorname{NB}}
+\newcommand*{\N}{\operatorname{N}}
+<!-- Operators, functions -->
+\newcommand*{\sign}{\operatorname{sign}}
+\newcommand*{\I}{\mathbbm{1}} 
+\renewcommand*{\P}{\mathbb{P}}
+\newcommand*{\E}{\mathbb{E}}
+\newcommand{\dummy}[1]{\mathbbm{1}\{\texttt{#1}\}}
+\newcommand*{\med}{\operatorname{med}}
+\newcommand*{\Var}{\operatorname{Var}}
+\newcommand*{\Cov}{\operatorname{Cov}}
+\newcommand*{\Corr}{\operatorname{Corr}}
+\newcommand*{\diag}{\operatorname{diag}}
+\newcommand*{\logit}{\operatorname{logit}}
+\newcommand*{\Odds}{\operatorname{Odds}}
+\newcommand*{\OR}{\operatorname{OR}}
+\newcommand*{\RR}{\operatorname{RR}}
+<!-- Estimators  -->
+\newcommand*{\hmu}{\hat{\mu}}
+\newcommand*{\hsigma}{\hat{\sigma}}
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE, warning = TRUE, message = TRUE, 
+                      cache = FALSE)
+options(warn = 1)
+```
+
+# Overview
+
+We create a 1-month-ahead probability of default (PD) model using logistic regression with panel data comprised of loan origination characteristics, monthly loan performance variables and macroeconomic variables. That is, using month-level data, we use information available at time $t$ (including information from origination) to predict default at time $t+1$. One of the covariates we used is the rolling count of delinquencies (missed payments) up to the current time, which is effectively what makes the regression a state-dependent model\footnote{In fact, the model could be extended by fitting the same regression to other definitions of default using the other states (1 missed payment, 2 missed payments), which would make that collection of models able to represent a 3-state time- and loan-dependent Markov transition matrix.}. Due to the inclusion of these covariates, the model is best interpreted as an early-warning PD model useful for credit portfolio monitoring (e.g. detect loans at high risk of default) and account management (e.g. offer deals to stable borrowers)\footnote{This is *not* a model for the probability that a loan ever defaults using only origination data, which would be a tool more useful for loan pricing than ongoing portfolio management.}.
+
+We face natural right-censoring at the data cutoff date (the event status in month $T+1$ is unobserved for the final observed month $T$). In addition, to enforce an absorbing default state under our simplified default definition (3+ missed payments), we truncate each loan's panel after it's first default month. Due to this, we implicitly condition on the loan surviving up to the current time, so we can also view the regression as a hazard rate model. 
+
+We form a sample by combining data from 2013, 2016 and 2020 vintages sourced from the Freddie Mac Single Family Loan-Level Dataset (SFLLD). These origination years are chosen to provide a sample of loans originating in a variety of macroeconomic environments and to help identify the possible effects of loan age\footnote{Loan age is the natural measure of "time" for a specific loan.} separately from calendar time.
+
+We do a first pass of variable selection by including economically justified covariates and visually inspecting the empirical relationships between our covariates and the logistic transform of the hazard. Next, we check if we can drop any unnecessary covariates using Lasso (L1 regularization). After variable selection, we use a time-based 70/30 split to train the model on the training set and evaluate the performance on the held-out test set. The training set corresponds to months from 2013/02 to 2021/09, and the test set corresponds to months from 2021/10 to 2025/05.
+
+# Model Definition
+
+We define the event of default as $90+$ days past due ($3+$ missed monthly payments). Some borrowers never make another monthly payment after "default", although there are also some\footnote{Approximately $10\%$ of loans in our data have this property.} borrowers that subsequently cure (return to $<90$ days past due) after "defaulting" and then possibly "default" again. We wish to define default as an absorbing state, meaning that a lender remains in default once they default. To enforce this, for each loan we drop the rows for months following the month of default. This simplified definition allows us to have more cases of "default" than if we only included actual defaults which never cured.
+
+Also note that we treat prepayment as a right-censoring event. Specifically, once a loan prepays, it permanently exists the risk set for default, and we accordingly drop the observation corresponding to the prepayment month as well as all subsequent months for that loan. This is the approach of modeling cause-specific default hazard, treating prepayment as an independent\footnote{When we say independence here, we mean that we assume prepayment and default are conditionally independent given the covariates in the model.} censoring mechanism rather than explicitly modeling competing risks.
+
+We will fit the following logistic regression model (Binomial GLM with canonical link):
+$$
+\begin{aligned}
+(Y_{it}\Big|\F_{it})&\sim\Ber(\pi_{it})~~~\text{independently} \\
+\pi_{it}&=\text{PD}_{it}^\text{1mo} \\
+\logit(\pi_{it}) &= X_{it}^T\beta^{(L)} +Z_t^T\beta^{(M)}
+\end{aligned}
+$$
+where:
+\begin{itemize}
+  \item $\logit(\pi)=\ln\Big(\pi/(1-\pi) \Big)$ is the logistic ("log odds") function, 
+  \item $Y_{it}=\I[\text{loan }i\text{ defaults in month }t+1]$, 
+  \item $\F_{it}=\sigma\Big((X_{is},Z_s)_{s\leq t}\Big)$ is the sigma-field generated by the covariates for loan $i$ up to time $t$ (which can be thought of as the available information pertaining to loan $i$ up to time $t$), 
+  \item $\pi_{it}=\P(Y_{it}=1|\F_{it})=\text{PD}_{it}^\text{1mo}$ is the probability of default in month $t+1$ (given survival up to time $t$ and the information for loan $i$ up to time $t$),
+  \item $X_{it}$ is a vector of covariates for loan $i$ at month $t$, 
+  \item $\beta^{(L)}$ is the parameter vector for the loan-specific associations, 
+  \item $Z_t$ is a vector of exogenous macroeconomic covariates at month $t$ (appropriately lagged so that they are observed before $t$), and
+  \item $\beta^{(M)}$ is the parameter vector for the macroeconomic associations.
+\end{itemize}
+
+## Hazard Model View
+This can also be viewed as a discrete hazard model:
+
+Let $T_i\in\{0,1,2,\dots\}$ be the survival time (time of default; first time loan is 90+ days past due) for loan $i$.
+The covariate-dependent hazard (instantaneous risk) function for loan $i$ at month $t+1$ is
+$$\begin{aligned}
+h_i(t+1|\F_{it})&=\P(T_i=t+1|T_i\geq t +1, \F_{it}) \\
+&= \P(\text{default in month }t+1|\text{no default as of month }t, \F_{it}) \\
+&= \P(Y_{it}=1|\F_{it}) \\
+&= \pi_{it}
+\end{aligned}$$
+
+This interpretation is valid because we removed rows for loans in the months after they defaulted\footnote{Since "default" was defined as 90+ DPD, this means we removed observations in months $t+1,t+2,\dots$ after $Y_{it}=1$ even if there may be some loans which ended up returning to a non-default state.} and we dropped the final month of censored observations\footnote{At the final month in our dataset, whether or not a loan defaults next month is unknown.}, so each loan-month observation represents a period during which the loan is *at risk* of default.
+
+## Independence and Inference
+We use the standard GLM likelihood (assuming full indepndence) as a working model for $\P(Y_{it}=1|\F_{it})=\pi_{it}$. Cross-loan independence is a plausible assumption after conditioning on macro covariates, although residual within-loan dependence may remain due to unobserved borrower and servicing effects. Under correct specification of the conditional mean $\E(Y_{it}|\F_{it})=\pi_{it}$, the MLE remains a good estimator, so point estimation and prediction are okay. However, naive standard errors can be biased under un-modeled within-loan dependence, so for confidence intervals we use loan-clustered robust standard errors (CRSEs). 
+
+
+```{r}
+# Load libraries
+library(tidyverse) # SQL-like data manipulation and more (e.g. dplyr)
+library(ggplot2) # highly customizable visualizations
+library(fredr) # FRED API
+library(corrplot) # correlation matrix heat maps
+library(performance) # VIF calculations and visualizations
+library(knitr) # polished display of tables
+library(glmnet) # regularized GLMs
+```
+
+# Load and Clean Loan Data
+
+```{r}
+# Import data
+orig_df <- read.csv("C:/Users/acubi/OneDrive/Desktop/Projects-Code-Certificates/Credit-Risk-Mortgages/credit_risk_pd/data/processed/Regression/orig_data.csv")
+perf_df <- read.csv("C:/Users/acubi/OneDrive/Desktop/Projects-Code-Certificates/Credit-Risk-Mortgages/credit_risk_pd/data/processed/Regression/perf_data.csv")
+
+```
+
+Note: we're using the definition of the "state" variable from the notebook "Mortgage-Credit-Risk-DTMC.ipynb".
+
+We are concerned with modeling the event of default in the *next* month using information available in the *current* month. 
+
+```{r}
+# Create indicator variable for event of default next month and
+#   drop loans from data (remove from at-risk set) in months after defaulting 
+perf_df <- perf_df %>% 
+  arrange(loan_sequence_number, ymd(monthly_reporting_period)) %>% 
+  group_by(loan_sequence_number) %>% 
+  mutate(
+    exit_now = (state %in% c("Default","Prepaid")), 
+    keep = (cumsum(exit_now) == 0), # keep rows for a loan strictly before default 
+    next_state = lead(state), 
+    y = as.integer(next_state == "Default") # response variable
+  ) %>% 
+  ungroup() %>% 
+  filter(keep, !is.na(y)) %>% 
+  select(-exit_now, -keep)
+
+# Merge origination and monthly data
+full_df <- perf_df %>% left_join(orig_df, by = "loan_sequence_number")
+
+# Delete perf_df to save space
+rm(perf_df)
+
+# Note: for any fixed loan, the origination variables are constant across months in full_df
+
+
+# Drop right-censored rows (last time point for each loan)
+full_df <- full_df %>% filter(!is.na(y))
+
+# Sort on (loan ID, time)
+full_df <- full_df %>% arrange(loan_sequence_number, ymd(monthly_reporting_period))
+
+# Drop loans with NA values for LTV ratio at origination
+na_ltv_ids <- full_df %>% 
+  filter(orig_ltv == 999) %>% 
+  pull(loan_sequence_number) %>% unique()
+na_ltv_ids %>% length()
+full_df %>% filter(loan_sequence_number %in% na_ltv_ids, y == 1) %>% 
+  count() # check that dropping this wouldn't get rid of many default events (it doesn't)
+full_df <- full_df %>% filter(!(loan_sequence_number %in% na_ltv_ids))
+
+# Check out loans with NA values for DTI ratio at origination
+na_dti_ids <- full_df %>% 
+  filter(orig_dti == 999) %>% 
+  pull(loan_sequence_number) %>% unique()
+na_dti_ids %>% length()
+full_df %>% filter(loan_sequence_number %in% na_dti_ids, y == 1) %>% 
+  count() # check that dropping this wouldn't get rid of many default events (it does!)
+
+# Create indicator for missing DTI values and impute the missing ones with median
+clean_dti_vec <- orig_df$orig_dti[orig_df$orig_dti != 999]
+med_dti <- median(clean_dti_vec)
+full_df <- full_df %>% 
+  mutate(dti_missing = (orig_dti == 999), 
+         orig_dti_imp = ifelse(test=(orig_dti==999), 
+                           yes=med_dti, no=orig_dti))
+
+
+# Drop loans with NA values for credit score
+na_cs_ids <- full_df %>% 
+  filter(credit_score == 9999) %>% 
+  pull(loan_sequence_number) %>% unique()
+na_cs_ids %>% length()
+full_df %>% filter(loan_sequence_number %in% na_cs_ids, y == 1) %>% 
+  count() # check that dropping this wouldn't get rid of many default events (it doesn't)
+full_df <- full_df %>% filter(!(loan_sequence_number %in% na_cs_ids))
+
+# Normalize loan age into percentage of loan term
+full_df$loan_age_pct <- full_df$loan_age / full_df$orig_loan_term
+
+# Create variable for proportion of original unpaid principal left unpaid 
+full_df$upb_pct <- full_df$current_actual_upb / full_df$orig_upb
+
+# Create region variable (to use instead of state)
+extra_abbs <- c("DC", "PR", "VI", "GU", "AS", "MP")
+extra_regs <- c("South", "South", "South", "West", "West", "West")
+custom_abb <- c(state.abb, extra_abbs)
+custom_region <- c(as.character(state.region), extra_regs)
+full_df <- full_df %>%
+  mutate(region = custom_region[match(property_state, custom_abb)])
+
+# Check levels of PPM flag and amortization type
+orig_df$amortization_type %>% 
+  as.factor() %>% levels()
+orig_df$ppm_flag %>% 
+  as.factor() %>% levels()
+
+# Ensure orig_df only keeps IDs that we use for the full panel data
+orig_df <- orig_df %>% 
+  filter(loan_sequence_number %in% unique(full_df$loan_sequence_number))
+
+
+# Select relevant variables for modeling
+full_df <- full_df %>% select(
+  loan_sequence_number, # ID
+  monthly_reporting_period, # time
+  y, # response (indicator for default next month)
+  
+  # monthly performance features (time-varying)
+  deliq_num, # number of missed payments
+  loan_age, # age of loan in months
+  loan_age_pct, # age of loan as percentage of loan term
+  upb_pct, # percentage of original unpaid principal left unpaid
+  
+  # origination features (constant over time for fixed loan)
+  orig_upb, # unpaid balance at origination (original loan amount)
+  quarter, # quarter of year when loan was originated
+  credit_score, # FICO credit score
+  orig_ltv, # loan-to-value ratio at origination
+  orig_dti_imp, # debt-to-income ratio at origination (imputed with median)
+  dti_missing, # indicator for DTI at origination being missing
+  orig_interest_rate, # interest rate on loan at origination
+  orig_loan_term, # length of the loan in months
+  occupancy_status, # e.g. primary residence, investment property, etc.
+  region, # region of USA (north/east/south/west) where property is located
+  loan_purpose, # e.g. Cash-Out Refinance mortgage
+) %>% rename(
+  date = monthly_reporting_period, 
+  orig_rate = orig_interest_rate, 
+  orig_qtr = quarter
+)
+
+```
+
+The official document with the full data dictionary and user guide for SFLLD can be found at [user guide](https://www.freddiemac.com/fmac-resources/research/pdf/user_guide.pdf). 
+
+There exist variables which may be useful that we did not use, such as "Estimated LTV" in the monthly performance data which relies on Freddie Mac's proprietary Automated Valuation Model. These variables are omitted so that all variables in the final model are those which are readily available at a typical bank or credit union. 
+
+We drop loans with NA values for LTV at origination since it is an extremely small portion of our sample and none of those loans end up defaulting.
+
+For loans with NA values for DTI at origination (`orig_dti`), there are actually a material amount which end up defaulting, so we can't simply drop these loans. We create an indicator variable called `dti_missing` for `orig_dti` having an NA value, and we create a new variable `orig_dti_imp` which is equal to `orig_dti` when it is not missing and otherwise it is imputed with the median. This way, we can use both `dti_missing` and `orig_dti_imp` as variables in our model.
+
+Note: all loans in the data happen to be *fixed* rate mortgages (FRMs) and *not* be prepayment penalty mortgages (PPMs). For this reason, we cannot include the indicators for either of these factors in our model, and it also means that our model is implicitly conditioning on the loan being an FRM and a non-PPM.
+
+
+# Load and Clean Macroeconomic Data
+
+Macroeconomic variables are included in the model as exogenous time-varying covariates, which allows the model to condition on observed (lagged) macroeconomic variables and hence help the model learn the overall economic environment that lenders face at a given point in time. 
+
+```{r, include=FALSE}
+# Set FRED API key (this should be hidden from PDF output, and don't publish raw Rmd)
+Sys.setenv(FRED_API_KEY = "0a2631fdb7b16e161ba0c36233ad34ff")
+```
+
+```{r}
+
+months <- full_df %>% 
+  select(date) %>% 
+  unique() %>% 
+  arrange(date)
+months <- months$date
+
+# View first month of time window
+months[1]
+
+# Set start and end date for macro variables 
+start_date <- as.Date("2012-01-01") 
+end_date <- as.Date(months[length(months)]) 
+
+pull_fred <- function(series_id, monthly_avg=FALSE) {
+  df <- fredr(
+      series_id=series_id, 
+      observation_start=start_date, 
+      observation_end=end_date
+    ) %>% 
+    select(date, value) 
+  if (monthly_avg) {
+    df %>% mutate(
+      ym = floor_date(date, "month") # month bucket
+      ) %>% 
+      group_by(ym) %>% 
+      summarise(
+        value = mean(value, na.rm=TRUE), .groups='drop'
+        ) %>% 
+      rename(date = ym, !!tolower(series_id) := value) # rename value column to the series_id
+  } else {
+    df %>% 
+      rename(!!tolower(series_id) := value) # rename value column to the series_id
+  }
+}
+
+
+# Get time series from FRED
+unrate <- pull_fred("UNRATE")
+cpi <- pull_fred("CPIAUCSL") %>% rename(cpi = cpiaucsl)
+fedfunds <- pull_fred("FEDFUNDS") 
+t10rate <- pull_fred("GS10") %>% rename(t10rate = gs10)
+hpi <- pull_fred("CSUSHPINSA") %>% rename(hpi = csushpinsa)
+slope <- pull_fred("T10Y3M", monthly_avg=TRUE) %>% rename(slope = t10y3m)
+vix <- pull_fred("VIXCLS", monthly_avg=TRUE) %>% rename(vix = vixcls)
+
+# Merge into a single dataframe
+macro <- unrate %>% 
+  left_join(cpi, by='date') %>% 
+  left_join(fedfunds, by='date') %>% 
+  left_join(hpi, by='date') %>%
+  left_join(slope, by='date') %>% 
+  left_join(vix, by='date') %>% 
+  left_join(t10rate, by='date') %>% 
+  arrange(date) %>% 
+  mutate(
+    # growth in CPI (inflation) YoY 
+    infl_yoy = 100*(cpi / lag(cpi, 12) - 1), 
+    # home inflation YoY
+    hpi_yoy = 100*(hpi / lag(hpi, 12) - 1), 
+    # change in UNRATE YoY
+    unrate_chg_yoy = unrate - lag(unrate, 12), 
+    # change in FEDFUNDS YoY
+    fedfunds_chg_yoy = fedfunds - lag(fedfunds, 12), 
+    # change in yield curve slope YoY
+    slope_chg_yoy = slope - lag(slope, 12)
+  ) 
+
+# Prep data for plotting
+macro_long <- macro %>%
+  select(date, infl_yoy, hpi_yoy, unrate_chg_yoy, 
+         fedfunds_chg_yoy, slope, slope_chg_yoy) %>%
+  pivot_longer(cols = -date, names_to = "series", values_to = "value")
+macro_long$series <- recode(
+  macro_long$series, 
+  infl_yoy = "CPI Inflation YoY",
+  hpi_yoy = "HPI Inflation YoY",
+  unrate_chg_yoy = "Unemployment YoY Change",
+  fedfunds_chg_yoy = "Fed Funds YoY Change", 
+  slope = "Yield Curve Slope (10Y-3M)", 
+  slope_chg_yoy = "Yield Curve Slope YoY Change"
+)
+# Plot all the macro time series
+ggplot(macro_long, aes(x = date, y = value, color = series)) +
+  geom_line(linewidth = 0.8) +
+  theme_minimal() +
+  labs(
+    x = "Date",
+    y = "Value",
+    color = "Macro Variable",
+    title = "Selected Macroeconomic Time Series"
+  ) 
+rm(macro_long)
+ggplot(vix, aes(x = date, y = vix)) +
+  geom_line(linewidth = 0.8) +
+  theme_minimal() +
+  labs(
+    x = "Date",
+    y = "Value",
+    title = "CBOE Volatility Index (VIX)"
+  ) 
+index_levels <- data.frame(
+  date = rep(cpi$date, 2), 
+  value = c(hpi$hpi, cpi$cpi), 
+  series = c(rep("hpi",length(cpi$date)), rep("cpi",length(cpi$date)))
+)
+ggplot(index_levels, aes(x = date, y = value, color = series)) +
+  geom_line(linewidth = 0.8) +
+  theme_minimal() +
+  labs(
+    x = "Date",
+    y = "Value", 
+    color = "Index", 
+    title = "HPI and CPI Inflation YoY"
+  ) 
+
+
+
+macro <- macro %>% filter(!is.na(infl_yoy))
+# Correlation matrix heat map for all macroeconomic variables
+cor_macro <- macro %>% select(-date) %>% cor()
+corrplot(cor_macro, method="color", tl.col="black", addCoef.col="black", 
+         tl.srt=45, number.font=3, number.cex=0.65, 
+         title="Correlations (Macroeconomic Variables)")
+
+
+# Lag macro variables 1mo to prevent leakage
+macro <- macro %>% mutate(
+  last_t10rate = lag(t10rate, 1), 
+  last_cpi = lag(cpi, 1), 
+  last_infl_yoy = lag(infl_yoy, 1), 
+  last_hpi = lag(hpi, 1), 
+  last_hpi_yoy = lag(hpi_yoy, 1), 
+  last_unrate_chg_yoy = lag(unrate_chg_yoy, 1), 
+  last_fedfunds = lag(fedfunds, 1), 
+  last_fedfunds_chg_yoy = lag(fedfunds_chg_yoy, 1), 
+  # slope and vix are still lagged because we use monthly averages
+  last_slope = lag(slope, 1), 
+  last_slope_chg_yoy = lag(slope_chg_yoy, 1), 
+  last_vix = lag(vix, 1)
+) %>% 
+  select(
+   date, last_t10rate, last_cpi, last_infl_yoy, last_hpi_yoy, last_hpi, 
+   last_vix, last_unrate_chg_yoy, last_fedfunds, last_fedfunds_chg_yoy, 
+   last_slope, last_slope_chg_yoy
+  )
+
+# Merge macro data to loan-month data
+full_df <- full_df %>% 
+  mutate(date = as.Date(date))
+full_df <- full_df %>% 
+  left_join(macro, by="date")
+
+# Derive date of origination
+loan_vintages <- full_df %>%
+  group_by(loan_sequence_number) %>%
+  summarise(
+    entry_year = year(min(date)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    vintage_year = case_when(
+      entry_year %in% 2013:2015 ~ 2013,
+      entry_year %in% 2016:2019 ~ 2016,
+      entry_year %in% 2020:2025 ~ 2020,
+      TRUE ~ entry_year
+    )
+  )
+orig_df$vintage_year <- NULL
+orig_df <- orig_df %>%
+  left_join(loan_vintages %>% select(loan_sequence_number, vintage_year),
+            by = "loan_sequence_number") 
+orig_df <- orig_df %>%
+  mutate(
+    orig_quarter = case_when(
+      quarter == "Q1" ~ 1,
+      quarter == "Q2" ~ 2,
+      quarter == "Q3" ~ 3,
+      quarter == "Q4" ~ 4
+    ),
+    orig_month = case_when(
+      orig_quarter == 1 ~ 1, # Jan
+      orig_quarter == 2 ~ 4, # Apr
+      orig_quarter == 3 ~ 7, # Jul
+      orig_quarter == 4 ~ 10 # Oct
+    ),
+    orig_date = as.Date(sprintf("%d-%02d-01", vintage_year, orig_month))
+  )
+full_df <- full_df %>%
+  left_join(orig_df %>% select(loan_sequence_number, orig_date),
+            by = "loan_sequence_number")
+
+# Approximate home price appreciation since origination ("HPAO")
+hpi_df <- hpi %>% rename(orig_date = date, hpi_orig = hpi)
+full_df$hpi_orig <- NULL
+rm(hpi)
+full_df <- full_df %>%
+  left_join( # join HPI at origination
+    hpi_df, by = "orig_date") %>%
+  mutate(
+    last_hpao = 100 * (last_hpi / hpi_orig - 1)
+  )
+rm(loan_vintages)
+
+
+
+## Try hpi_yoy, hpao, orig_ltv, and orig_ltv * I(1/hpao) in the model.
+
+
+```
+
+It is necessary to lag the macroeconomic features by (at least) one month because the data for month $t-1$ is typically only released during month $t$.
+
+We could also try some different seasonal growth rates or differences for the macroeconomic covariates, such as a more short-term feature for changes in the Federal Funds rate (e.g. quarterly difference), although for the sake of this project we stick to the features derived above.
+
+# EDA, Variable Selection and Feature Engineering
+
+## Univariate Survival Analysis 
+
+```{r}
+library(survival) # for KM estimator
+
+# Aggregate (loan, month)-indexed binary data into loan-indexed count data
+surv_df <- full_df %>% 
+  group_by(loan_sequence_number) %>%
+  arrange(date, .by_group = TRUE) %>%
+  mutate(t = loan_age) %>% 
+  summarise(
+    time = ifelse(any(y==1), yes=min(t[y==1]), no=max(t)), # event or censor time
+    status = as.integer(any(y == 1)), # 1 = observed event ; 0 = censored
+    .groups = "drop"
+  )
+
+# Fit KM curve (estimate survival function)
+fit <- survfit(Surv(time, status) ~ 1, data = surv_df)
+
+rm(surv_df)
+
+# Estimate CDF
+cdf_fit <- data.frame(time = fit$time, surv = fit$surv, 
+                     lower = 1 - fit$lower, upper = 1 - fit$upper) %>% 
+  mutate(cdf = 1 - surv) %>% 
+  select(-surv)
+
+rm(fit)
+
+# Plot CDF estimate with confidence limits
+ggplot(cdf_fit, aes(x=time, y=cdf)) +
+  geom_step() + 
+  geom_ribbon(aes(ymin=lower, ymax=upper), alpha=0.25) +
+  theme_minimal() + 
+  labs(title="Estimated Cumulative Probability of Default vs. Time at Risk", 
+       x="Time at Risk (Age of Loan in Months)", 
+       y="Est. Cumulative PD")
+```
+
+The estimated cumulative PD (eCPD) curve shows spikes at around 40-50 months and 75-90 months, which is suspected to be the effects of macroeconomic shocks from those periods of time (i.e. COVID). For the 2016 origintion sample, a loan age of 40-50 months roughly corresponds to the time period of 2020 Q2 on average, and similarly for the 2013 origination sample, a loan age of 75-90 months roughly corresponds to the time period of 2020 Q2 on average. If we look more closely at the very start of the eCPD curve for small loan ages, we see that it is very subtly increasing at a faster pace than the prolonged steady rates of growth we see for later months, which aligns with the fact that the 2020 origination sample was in the calendar time period of 2020 Q1-Q2 for these loan ages. 
+
+The goal is to use macroeconomic covariates such as the unemployment rate and the house price index in our PD model so that we can try to capture the effects of macro shocks on PD and so that we can identify the possible effect of other variables like loan age without the issue of confounding. 
+
+
+
+## Identifying Possible Age of Loan Effects
+
+```{r}
+
+full_df <- full_df %>%
+  group_by(loan_sequence_number) %>%
+  arrange(date, .by_group = TRUE) %>% 
+  ungroup()
+
+full_df <- full_df %>% mutate(
+  yq = paste(format(date, "%Y"), quarters(date))
+)
+
+haz_age <- full_df %>%
+  group_by(loan_age) %>%
+  summarise(
+    haz = mean(y), 
+    n = n(), .groups = "drop")
+
+poly_formula <- function(k) {
+  paste0("I(x^", 1:k, ")", collapse = "+")
+}
+
+ggplot(haz_age %>% filter(haz > 0 & haz < 1),
+       aes(x = loan_age, y = qlogis(haz))) +
+  geom_point(aes(size=n), alpha=0.5) +
+  geom_smooth(se=TRUE, method="lm", 
+              formula=paste0("y~",poly_formula(11))) +
+  labs(x = "Loan Age (months)", y = "Est. Logit Hazard") +
+  scale_size_continuous(name ="size", range=c(0.5, 3)) +
+  theme_minimal()
+
+haz_age_date <- full_df %>%
+  group_by(loan_age, yq) %>%
+  summarise(
+    haz = mean(y), 
+    n = n(), .groups = "drop")
+
+ggplot(haz_age_date %>% filter(haz > 0 & haz < 1) %>% 
+         mutate(yr = substr(yq, start=1,stop=4)), 
+       aes(x = loan_age, y = qlogis(haz))) +
+  geom_point(aes(size = n), alpha = 0.2) +
+  geom_smooth(se = TRUE, method = "loess", formula = "y~x") +
+  facet_wrap(~ yr, ncol = 4) +
+  scale_size_continuous(name = "n", range = c(0.4, 2.5)) +
+  labs(
+    x = "Loan Age (months)",
+    y = "Empirical Hazard",
+    title = "Empirical Default Hazard by Loan Age, Faceted by Calendar Year"
+  ) +
+  theme_minimal()
+
+
+# Plot calendar time and age of loan simultaneously
+ggplot(haz_age_date %>% filter(n > 100),
+       aes(x = loan_age, y = yq, fill = haz)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(
+    x = "Loan Age (months)",
+    y = "Calendar Time (Year-Quarter)",
+    fill = "Empirical Hazard"
+  ) +
+  theme_minimal()
+rm(haz_age_date)
+```
+
+From the heat map above there does not seem to be any association between hazard and loan age. However, we do see clear spikes in hazard across loans of *all ages* during the time period of 2020 Q2. In the year-faceted scatterplot, we observe 3 clusters (one for each origination) for most years, and it is difficult to identify any relationship with loan age within each year.
+
+Thus, it seems that macroeconomic conditions play a much more important role in the event of default than age of loan does. However, loan age may still be a useful control in our model since we are using many time-dependent macro covariates. Thus, we will fit models both with and without the age of loan variable and compare them.
+
+## Selecting and Transforming Macroeconmic Features
+
+```{r}
+haz_date <- full_df %>%
+  group_by(date) %>% 
+  summarise(haz = mean(y), n_obs = n(), .groups = "drop") %>%
+  left_join(macro, by="date")
+
+macro_vars <- setdiff(names(macro), "date")
+for (var_name in macro_vars) {
+  p <- ggplot(haz_date %>% filter(haz > 0 & haz < 1), 
+              aes(.data[[var_name]], qlogis(haz))) +
+        geom_point(aes(size=n_obs), alpha=0.5) +
+        geom_smooth(se = TRUE, method = "loess", formula = "y~x") +
+        theme_minimal() +
+        labs(y = "Est. Logit(Hazard)", x = var_name, 
+             title = var_name) + 
+    scale_size_continuous(name ="size", range=c(0.5, 3))
+  print(p)
+  rm(p)
+}
+rm(haz_date)
+
+haz_rate <- full_df %>%
+  group_by(orig_rate) %>% 
+  summarise(
+    haz = mean(y), .groups = "drop"
+  )
+p <- ggplot(haz_rate %>% filter(haz > 0 & haz < 1), 
+            aes(orig_rate, qlogis(haz))) +
+        geom_point() +
+        geom_smooth(se = TRUE, method = "loess", formula = "y~x") +
+        theme_minimal() +
+        labs(y = "Est. Logit(Hazard)", x = "Interest Rate at Origination", 
+             title = "Interest Rate at Origination")
+print(p)
+rm(p)
+rm(haz_rate)
+```
+
+We will use VIX (`last_vix`) as a linear predictor. There is only one point which is a very clear outlier from the overall linear association, which is what makes the LOESS curve appear nonlinear. 
+
+Based on the patterns observed in the plots above and the economic context, we make transformations to many of the other variables in an effort to see if we can get better candidates for linear predictors while mainlining interpretability. 
+
+Before moving on to the transformations, we note that there are some variables which we can disqualify right away based on the plots. 
+
+The raw level of HPI (`last_hpi`) and CPI (`last_cpi`) have near perfect positive correlation, and they are both strongly correlated with time, so we suspect that the patterns we observe in the plot are confounded by events in the time periods corresponding to those index levels (i.e. COVID). Hence, we do not use these variables. 
+
+The home inflation (`last_hpi_yoy`), overall inflation (`last_infl_yoy`), and raw level of the federal funds rate (`last_fedfunds`) all show no association with logit hazard, so we do not use them.
+
+We will use the 10-year treasury rate (`last_t10rate`) and the loan rate at origination to create a new variable that should offer both better interpretation and predictive power.
+
+
+```{r}
+# Compute credit spread (risk premium) for each loan
+orig_df <- orig_df %>% 
+  left_join(t10rate %>% rename(orig_date = date, t10r = t10rate),
+            by="orig_date") 
+orig_df <- orig_df %>%
+  mutate(cr_spread = pmax(orig_interest_rate - t10r, 0))
+full_df <- full_df %>% 
+  left_join(orig_df %>% select(loan_sequence_number, cr_spread), 
+            by="loan_sequence_number")
+
+# Plot logit hazard vs. credit spread
+haz_spread_bin <- full_df %>%
+  mutate(cr_bin = ntile(cr_spread, 40)) %>% 
+  group_by(cr_bin) %>% 
+  summarise(cr_mu = mean(cr_spread), haz = mean(y), n = n(), .groups = 'drop')
+ggplot(haz_spread_bin %>% filter(haz > 0 & haz < 1), 
+       aes(cr_mu, qlogis(haz))) +
+  geom_point(alpha=0.7) +
+  geom_smooth(se = TRUE, method = "loess", formula = "y~x") +
+  theme_minimal() +
+  labs(y = "Est. Logit(Hazard)", x = "Spread", 
+       title = "Credit Spread (Risk Premium)")
+rm(haz_spread_bin)
+
+```
+
+The credit spread shows very clear linear association with the empirical logit hazard.
+
+```{r}
+predictor_names <- c("loan_age", "last_vix", "cr_spread")
+```
+
+```{r}
+
+# Indicator for low inflation
+full_df$last_infl_yoy_low <- factor(as.integer(full_df$last_infl_yoy < 2.5))
+full_df <- full_df %>% select(-last_infl_yoy)
+
+# Positive part of unremployment rate change
+full_df$last_unrate_chg_pos <- pmax(full_df$last_unrate_chg_yoy, 0)
+full_df <- full_df %>% select(-last_unrate_chg_yoy)
+
+# Rate cut (negative part of change in fed funds rate)
+full_df$last_rate_cut <- pmax(-full_df$last_fedfunds_chg_yoy, 0)
+full_df <- full_df %>% select(-last_fedfunds_chg_yoy)
+
+# Indicator of change in yield curve slope being positive
+full_df$last_slope_incr <- factor(as.integer(full_df$last_slope_chg_yoy > 0))
+full_df <- full_df %>% select(-last_slope_chg_yoy)
+
+# Magnitude of slope (steepness)
+full_df$last_slope_mag <- abs(full_df$last_slope)
+
+# Inversion status of yield curve slope
+full_df$last_invert <- factor(as.integer(full_df$last_slope < 0))
+full_df <- full_df %>% select(-last_slope)
+
+
+new_vars <- c("last_unrate_chg_pos", "last_rate_cut", "last_slope_mag", 
+              "last_slope_incr", "last_infl_yoy_low", "last_invert")
+
+haz_date <- full_df %>%
+  group_by(date) %>% 
+  summarise(haz = mean(y),across(all_of(new_vars), ~ first(.x)), 
+            .groups = "drop") 
+
+for (var_name in new_vars) {
+  if (var_name %in% c("last_infl_yoy_low", "last_slope_incr", 
+                      "last_invert", "last_vix_bin")) {
+    # overlapped histograms for categorical variables
+    p <- ggplot(haz_date %>% filter(haz > 0 & haz < 1),
+                aes(x = qlogis(haz), fill = factor(.data[[var_name]]))) +
+      geom_density(alpha = 0.6, position = "identity") + 
+      scale_fill_manual(values = c("steelblue", "lightpink", "darkred"), 
+                        name = var_name, labels = c("0", "1", "2")) +
+      theme_minimal() +
+      labs(
+        x = "Est. Logit(Hazard)",
+        y = "Kernel Density Estimate",
+        title = paste("Overlapping Densities by", var_name)
+      )
+  } else {
+    smoother <- ifelse(test=(var_name=="last_unrate_chg_pos"), 
+                     yes="lm", no="loess")
+    # scatterplots for continuous variables
+    p <- ggplot(haz_date %>% filter(haz > 0 & haz < 1), 
+              aes(.data[[var_name]], qlogis(haz))) +
+        geom_point() +
+        geom_smooth(se = TRUE, method = smoother, formula = "y~x") +
+        theme_minimal() +
+        labs(y = "Est. Logit(Hazard)", x = var_name, 
+             title = var_name)
+  }
+  print(p)
+  rm(p)
+}
+rm(haz_date)
+
+
+```
+
+`last_unrate_chg_pos` has a strong positive linear association with logit hazard.
+$=\max(\nabla_{12}\text{UR},0)$ where $\text{UR}$ is the unemployment rate.
+
+`last_rate_cut` has a moderate-to-strong association with logit hazard that is approximately linear.
+`last_rate_cut`$=\max(-\nabla_{12}\text{FF},0)$ where $\text{FF}$ is the fed funds rate.
+
+The distribution for the empirical logit hazard when `last_infl_yoy_low==1` (last month's YoY inflation was below 1.5\%) is shifted left with lower variance, and it is shifted right with higher variance when `last_infl_yoy_low==0`, which suggests a change in distribution, so we use this indicator in the model.
+
+The kernel density estimates for the subset where `last_slope_incr==0` and `last_slope_incr==1` are centered at roughly the same logit hazard value so we do not use `last_slope_incr` as a predictor. For the same reason, we do not use `last_invert`.
+
+```{r}
+predictor_names <- c(predictor_names, "last_unrate_chg_pos", "last_rate_cut", 
+                     "last_infl_yoy_low")
+
+```
+
+## Looking at Approximate LTV
+
+Earlier in the code, we derived the time-varying approximate Home Price Appreciation since Origination (HPAO) variable as 
+$$
+\text{HPAO}_i(t)=\text{HPI}(t)\Big/\text{HPI}(t_0^{(i)})
+$$
+where $\text{HPI}_t$ is the Home Price Index at time $t$ and $t=t_0^{(i)}$ corresponds to the time of origination for loan $i$. We mentioned earlier that the LTV (Loan-To-Value) ratio for a given loan $i$ at time $t>t_0^{(i)}$ is estimated by Freddie Mac using their Automated Valuation Model, which is because the value of the home for loan $i$ is typically unknown at an arbitrary time after origination. Using the $\text{HPAO}_i(t)$ variable defined above, we estimate $\text{LTV}_i(t)$ as follows.
+
+Let $L_i$ be the original loan amount for loan $i$ and let $V_i(t)$ be the value\footnote{When we say "value" here, we really just mean the market price, not necessarily the intrinsic value or fair value in a traditional valuation sense.}
+
+$$
+\text{LTV}_i(t) = \frac{\text{L}_i}{V_i(t)} = \frac{\text{L}_i}{V_i(t)\cdot V_i(t_0^{(i)})\big/V_i(t_0^{(i)})}
+= \frac{\text{L}_i}{V_i(t_0^{(i)})} \cdot \frac{1}{V_i(t) \big/ V_i(t_0^{(i)})} 
+\approx \text{LTV}_i(t_0^{(i)}) \Big/ \text{HPAO}_i(t)
+$$
+
+We use the assumption that the growth in the value of home $i$ is approximately the same as the growth in HPI. 
+
+Now we inspect the possible use of the 1-month lagged versions of $\text{HPAO}_i(t)$ and/or $\text{LTV}_i(t_0^{(i)}) \Big/ \text{HPAO}_i(t)$ as covariates in the model. 
+
+```{r}
+
+haz_hpao <- full_df %>%
+  group_by(last_hpao) %>%
+  summarise(haz = mean(y), .groups = "drop")
+ggplot(haz_hpao %>% filter(haz > 0 & haz < 1), 
+       aes(x = last_hpao, y = qlogis(haz))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", se = TRUE, formula = "y ~ x") +
+  theme_minimal() +
+  labs(
+    x = "HPAO",
+    y = "Est. Logit(Hazard)",
+    title = "HPAO (Home Price Appreciation Since Origination)"
+  )
+rm(haz_hpao)
+
+
+full_df <- full_df %>% 
+  mutate(last_ltv_est = orig_ltv / last_hpao)
+
+haz_eltv <- full_df %>%
+  group_by(last_ltv_est) %>%
+  summarise(haz = mean(y), .groups = "drop")
+ggplot(haz_eltv %>% filter(haz > 0 & haz < 1), 
+       aes(x = last_ltv_est, y = qlogis(haz))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", se = TRUE, formula = "y ~ x") +
+  theme_minimal() +
+  labs(
+    x = "Est. LTV ",
+    y = "Est. Logit(Hazard)",
+    title = "Est. LTV (LTV at Origination / HPAO)"
+  )
+ggplot(haz_eltv %>% filter(haz > 0 & haz < 1), 
+       aes(x = log(last_ltv_est), y = qlogis(haz))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", se = TRUE, formula = "y ~ x") +
+  theme_minimal() +
+  labs(
+    x = "Log Est. LTV ",
+    y = "Est. Logit(Hazard)",
+    title = "Log Est. LTV"
+  )
+ggplot(haz_eltv %>% filter(haz > 0 & haz < 1), 
+       aes(x = 1/last_ltv_est, y = qlogis(haz))) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "loess", se = TRUE, formula = "y ~ x") +
+  theme_minimal() +
+  labs(
+    x = "Inverse Est. LTV ",
+    y = "Est. Logit(Hazard)",
+    title = "Inverse Est. LTV (Est. Value-To-Loan Ratio)"
+  )
+rm(haz_eltv)
+
+full_df$last_vtl_est <- 1/full_df$last_ltv_est
+predictor_names <- c(predictor_names, "last_vtl_est")
+```
+
+The raw estimated LTV covariate shows a weak nonlinear relationship with logit hazard, and the log transform of the covariate shows a stronger but still somewhat nonlinear relationship with logit haazard. The inverse transform (which is effectively the estimated Value-To-Loan ratio) shows a moderate-strong linear relationship, so this is what we use in the model.
+
+The Value-To-Loan ratio can be viewed as a dimensionless version of the equity of the home:
+
+Let $E$ be the equity of the home, $V$ be the value of the home and $L$ be the loan amount, all at some fixed time. Now we have the following sequence of bijections: 
+$E=V-L ~\mapsto~ \frac{V-L}{L}=V/L-1 ~\mapsto ~V/L$
+
+This makes sense economically and aligns with the structural (option-theoretic) view of mortgages, wherein the mortgage is essentially viewed as put option on the home with the strike being the loan amount.
+\begin{itemize} 
+  \item (Negative Equity Case) $V<L\implies$ default (exercising the put) is economically rational.
+  \item (Positive Equity Case) $V> L\implies$ the put is out of the money and default (exercise) probability is small.
+\end{itemize}
+
+*possible source:*
+Deng, Y., Quigley, J., & Van Order, R. (2000).
+Mortgage Terminations, Heterogeneity and the Exercise of Mortgage Options.
+Econometrica.
+
+
+## Analyze Rest of Design Matrix
+
+Let's look at the original loan amount as a potential predictor.
+
+```{r}
+origupb_plot_df <- full_df %>% 
+  group_by(loan_sequence_number) %>% 
+  summarise(amt = min(orig_upb), event=sum(y)) %>% 
+  ungroup() %>% 
+  mutate(event = factor(event, levels=c(0,1), labels=c("y = 0", "y = 1")))
+
+ggplot(origupb_plot_df, aes(x=amt, fill=event)) +
+  geom_density(position='identity', alpha=0.3) +
+  labs(x="Original Unpaid Balance (Loan Amount)", y="Density", fill="Event") +
+  theme_minimal()
+
+rm(origupb_plot_df)
+```
+
+The two kernel density estimates are nearly identical so it is clear that there does not seem to be any predictive power in the loan amount variable. 
+
+We now look at sample summaries of the outcome across different levels of our categorical predictors to ensure that the event counts are sufficiently balanced across all levels. 
+
+```{r}
+# Remove variables that won't be used
+full_df <- full_df %>% 
+  select(-loan_age_pct, -orig_upb)
+
+full_df$y <- full_df$y %>% as.integer()
+
+# Encode categorical variables as factors
+cat_vars <- c("deliq_num", "occupancy_status", "region", "loan_purpose")
+for (v in cat_vars[1:length(cat_vars)]) {
+  full_df[[v]] <- as.factor(full_df[[v]])
+}
+
+# Summarize response grouped by each categorical variable
+results <- lapply(cat_vars, function(v) {
+  full_df %>% group_by(.data[[v]]) %>% 
+    summarise(mu = mean(y), sd = sqrt(mean(y)*(1-mean(y))), 
+              n  = n(), .groups = "drop") %>%
+    mutate(variable = v) %>% 
+    rename(level = 1) %>% 
+    select(variable, level, everything())
+})
+catsum_df <- bind_rows(results) %>% 
+  group_by(variable) %>% 
+  arrange(variable, mu) %>% 
+  ungroup()
+catsum_df %>% kable()
+```
+
+For `deliq_num` (the number of monthly payments missed), we see that the estimated PD (`mu`) becomes orders of magnitude higher as the level increases (strong association), so we include it in the model. In fact, the inclusion of this covariate is what effectively makes our model an incomplete Markov transition model in the sense that it would be complete if we also had models for the probability of `deliq_num=2` and `deliq_num=1` (which is attainable, just out of scope for this project). Note that we could also remove this covarite to make our model more of a structural economic model rather than a state-transition model. *verify that details of this are sound*
+
+We still have class imbalance, as expected. 
+
+For each of the other categorical variables, the estimated PD is the same order of magnitude ($10^{-4}$) across all levels. 
+
+For `loan_purpose`, we see that the estimated PD is descending in the order `(P,C,N)`, where P corresponds to purchase borrowers, C corresponds to cash-out refinance (ReFi) borrowers, and N corresponds to no-cash-out ReFi borrowers\footnote{Details on what these terms mean can be found on \url{https://www.freddiemac.com/fmac-resources/research/pdf/user_guide.pdf} under the "Origination Data File" table in column position 21.}. The relative growth values in estimated PD as we move across these levels is large, so we include `loan_purpose` in the model.
+
+For `occupancy_status`, we see that loans for secondary homes (`S`) have the lowest est. PD, loans for primary residences (`P`) have an est. PD that is relatively higher, and investment properties (`I`) have the highest est. PD although it is only a little higher than that of `P`. The effect of occupancy status seems weak overall, so we may include it as a weak but interpretable control although it does not seem to be a major risk factor.
+
+For `region`, we observe differences in est. PD across the levels on the same relative scale as seen in the `occupancy_status` factor, so it does not seem to be a major risk factor although once again it may be useful to include in the model as a control, especially since the effects of economic shocks can vary with respect to regional geopolitical status. 
+
+```{r}
+predictor_names <- c(predictor_names, "deliq_num", "loan_purpose", 
+                     "occupancy_status", "region")
+```
+
+Now let's look at potential continuous predictors
+
+```{r}
+haz_upb_bin <- full_df %>%
+  mutate(upb_bin = ntile(upb_pct, 100)) %>% 
+  group_by(upb_bin) %>% 
+  summarise(upb_mu = mean(upb_pct), haz = mean(y), .groups = 'drop')
+ggplot(haz_upb_bin %>% filter(haz > 0 & haz < 1), 
+       aes(upb_mu, qlogis(haz))) +
+  geom_point(alpha=0.7) +
+  geom_smooth(se = TRUE, method = "loess", formula = "y~x") +
+  theme_minimal() +
+  labs(y = "Est. Logit(Hazard)", x = "UPB %", 
+       title = "Unpaid Principal Balance %")
+rm(haz_upb_bin)
+```
+The unpaid principal balance % covariate (`upb_pct`) is strongly correlated with loan age and is a deterministic function of the payment schedule conditional on the absence of missed payments. *need to further justify not including it since yeah vs. logit hazard it has weird wave behaviour but it also is overall pretty linear and strong association*
+
+```{r}
+# Looking at loan term
+haz_term <- full_df %>%
+  group_by(orig_loan_term) %>% 
+  summarise(haz = mean(y), .groups = 'drop')
+ggplot(haz_term %>% filter(haz > 0 & haz < 1), 
+       aes(orig_loan_term, qlogis(haz))) +
+  geom_point(alpha=0.7) +
+  geom_smooth(se = TRUE, method = "loess", formula = "y~x") +
+  theme_minimal() +
+  labs(y = "Est. Logit(Hazard)", x = "Loan Term", 
+       title = "Loan Term")
+rm(haz_term)
+
+# Excess loan term above 25yrs
+full_df$term_cap <- pmax(full_df$orig_loan_term - 300, 0)
+haz_term <- full_df %>%
+  group_by(term_cap) %>% 
+  summarise(haz = mean(y), .groups = 'drop')
+ggplot(haz_term %>% filter(haz > 0 & haz < 1), 
+       aes(term_cap, qlogis(haz))) +
+  geom_point(alpha=0.7) +
+  geom_smooth(se = TRUE, method = "loess", formula = "y~x") +
+  theme_minimal() +
+  labs(y = "Est. Logit(Hazard)", x = "Max(Loan Term, 25 Years)", 
+       title = "Excess Loan Term Above 25 Years")
+rm(haz_term)
+full_df <- full_df %>% select(-term_cap)
+
+
+# Indicator for loan term being at least 25 years
+full_df$long_term <- factor(as.integer(full_df$orig_loan_term >= 300), 
+                            labels=c("<25y", ">=25y"))
+haz_term <- full_df %>%
+  group_by(date, long_term) %>%
+  summarise(haz = mean(y), .groups = "drop")
+ggplot(haz_term %>% filter(haz > 0 & haz < 1),
+       aes(x = qlogis(haz), fill = long_term)) +
+  geom_density(alpha = 0.6, position = "identity") +
+  scale_fill_manual(
+    values = c("steelblue", "lightpink"),
+    name   = "Loan Term",
+    labels = c("<25y", ">=25y")
+  ) +
+  theme_minimal() +
+  labs(x = "Est. Logit(Hazard)", y = "Kernel Density Estimate",
+    title = "Overlapping Densities for Long vs. Short-Medium Term Loans"
+  )
+rm(haz_term)
+
+```
+
+We include the indicator for term of the loan being at least 25 years (`long_term`) as a predictor due to the apparent distribution shift seen above.
+
+```{r}
+predictor_names <- c(predictor_names, "long_term")
+```
+
+
+```{r}
+# Looking at credit score
+haz_credit <- full_df %>%
+  group_by(credit_score) %>%
+  summarise(haz = mean(y), .groups = "drop")
+ggplot(haz_credit %>% filter(haz > 0 & haz < 1),
+       aes(y = qlogis(haz), x = credit_score)) +
+  geom_point(alpha = 0.6, position = "identity") +
+  geom_smooth(method='lm', se=TRUE, formula='y~x') +
+  theme_minimal() +
+  labs( x = "Credit Score", y = "Est. Logit(Hazard)",
+    title = "FICO Credit Score at Origination"
+  )
+rm(haz_credit)
+
+predictor_names <- c(predictor_names, "credit_score")
+```
+
+Credit score shows a strong negative linear association with logit hazard. From the context of our data, we know that FICO scores are typically used when determining the interest rate (at origination), and the interest rate is a function of credit spread and the 10-year treasury rate. Thus, it may seem redundant to include both the credit spread and FICO score at origination and the credit spread at origination, however the correlation is actually quite low in our sample, which we suspect is reflecting the fact that much more than *just* the credit score goes into loan pricing (determining the interest rate to charge). So we include both in the model. We will check VIF scores later to do a final check of multicollinearity.
+
+```{r}
+# Looking at DTI ratio at origination
+haz_dti <- full_df %>%
+  group_by(orig_dti_imp) %>%
+  summarise(haz = mean(y), .groups = "drop")
+ggplot(haz_dti %>% filter(haz > 0 & haz < 1),
+       aes(y = qlogis(haz), x = orig_dti_imp)) +
+  geom_point(alpha = 0.6, position = "identity") +
+  geom_smooth(method='loess', se=TRUE, formula='y~x') +
+  theme_minimal() +
+  labs( x = "DTI", y = "Est. Logit(Hazard)",
+    title = "DTI Ratio at Origination"
+  )
+rm(haz_dti)
+
+full_df$transf_dti <- abs(full_df$orig_dti_imp - 15)
+haz_transf_dti <- full_df %>%
+  group_by(transf_dti) %>%
+  summarise(haz = mean(y), .groups = "drop")
+ggplot(haz_transf_dti %>% filter(haz > 0 & haz < 1),
+       aes(y = qlogis(haz), x = transf_dti)) +
+  geom_point(alpha = 0.6, position = "identity") +
+  geom_smooth(method='loess', se=TRUE, formula='y~x') +
+  theme_minimal() +
+  labs( x = "|DTI - 15|", y = "Est. Logit(Hazard)",
+    title = "|DTI - 15|"
+  )
+
+haz_dti_miss <- full_df %>%
+  group_by(dti_missing, date) %>%
+  summarise(haz = mean(y), .groups = "drop")
+ggplot(haz_dti_miss %>% filter(haz > 0 & haz < 1),
+                aes(x = qlogis(haz), fill = factor(dti_missing))) +
+      geom_density(alpha = 0.6, position = "identity") + 
+      scale_fill_manual(values = c("steelblue", "lightpink"), 
+                        name = "DTI Missing", labels = c("0", "1")) +
+      theme_minimal() +
+      labs(x = "Est. Logit(Hazard)", y = "Kernel Density Estimate",
+        title = "Densities of Logit Hazard for Missing vs. Non-Missing DTI")
+ggplot(haz_dti_miss %>% filter(haz > 0 & haz < 1),
+       aes(x = factor(dti_missing), y = qlogis(haz), 
+           fill = factor(dti_missing))) +
+  geom_boxplot(alpha = 0.6) +
+  scale_fill_manual(values = c("steelblue", "lightpink"), name = "DTI Missing") +
+  theme_minimal() +
+  labs(
+    x = "DTI Missing Indicator",
+    y = "Est. Logit(Hazard)",
+    title = "Distribution of Logit Hazard by DTI Missing Status"
+  ) +
+  theme(legend.position = "none")
+rm(haz_dti_miss)
+
+full_df %>%
+  group_by(dti_missing) %>%
+  summarise(haz = mean(y), sd = sqrt(haz*(1-haz)), n = n(), 
+            .groups = "drop") %>% 
+  kable()
+
+```
+We include `dti_missing` in the model due to the apparent shift in distribution that we observe across the groups. 
+
+```{r}
+predictor_names <- c(predictor_names, "dti_missing")
+```
+
+The imputed DTI at origination variable clearly has a non-monotone relationship with logit hazard, although `transf_dti`$=|\text{DTI}-15|$ has a strong linear relationship except possibly at the right tail where we see some deviation from that pattern.
+
+We will now train some models on a subset of the data. We select the subset by including all loans with defaults observed and selecting a larger-sized random subset of the other loans (those that did not default). This is done so that for computational cost savings and so that we lessen the issues of statistical model comparison with very large sample size\footnote{For instance, with extremely large sample size ($n$), small relationships in the data become increasingly statistically signficant because $n$ is so large, which leads to overfitting.}.
+
+```{r}
+num_events <- full_df %>% filter(y == 1) %>% 
+  pull(loan_sequence_number) %>% unique() %>% length()
+
+num_all <- full_df %>% 
+  pull(loan_sequence_number) %>% unique() %>% length()
+
+(p_rec <- num_events/num_all)
+
+train_sample <- function(df=full_df, p=p_rec) {
+  events_df <- df %>% filter(y == 1)
+  event_ids <- events_df %>% pull(loan_sequence_number) %>% unique()
+  events_df <- df %>% filter(loan_sequence_number %in% event_ids)
+  nonevents_df <- df %>% filter(!(loan_sequence_number %in% event_ids))
+  nonevents_df <- nonevents_df %>% slice_sample(prop=p)
+  return( bind_rows(events_df, nonevents_df) )
+}
+
+set.seed(10) # reproducibility
+sample_df <- train_sample(p=0.06)
+
+
+
+# Model with DTI linear and symmetric about 15
+symlin_dti <- glm(y ~ transf_dti, family=binomial, 
+                  data=sample_df, x = FALSE, y = FALSE, model = FALSE)
+
+# Model with DTI quadratic and symmetric about 15
+symquad_dti <- glm(y ~ transf_dti + I(transf_dti^2), family=binomial, 
+                  data=sample_df, x = FALSE, y = FALSE, model = FALSE)
+
+AIC(symlin_dti, symquad_dti)
+
+symquad_dti$coefficients[['I(transf_dti^2)']]
+
+rm(symquad_dti, symlin_dti)
+```
+
+Even though it may seem like empirical logit hazard is quadratic in `transf_dti`, due to the plot and the fitted coefficient for the squared term from the model trained above being negative, it seems that any fitted quadratic would be concave and hence would approach $-\infty$ as `transf_dti`$\rightarrow \infty$, meaning that the model would return extremely low logit hazard values\footnote{Note that low logit hazard values correspond to hazard values of apprximately zero.} for extremely high DTI values\footenote{Since $\hat{\beta}_2<0$, the quadratic dominates for large $z=|\text{DTI}-15|$, so $\hat{\beta}_0+\hat{\beta}_1z+\hat{\beta}_2z^2\rightarrow-\infty$ as $z\rightarrow\infty$.}. This behaviour of asymptotically decreasing hazard at very high values of DTI would not be economically plausible. 
+
+It would make more sense that the steep growth in logit hazard flattens out or grows at a much slower pace past a threshold such as, say, `transf_dti`$=30$ based on the plot. The linear functional form for `transf_dti` does not capture such a pattern, and instead the linear term would make the hazard approach 1 as DTI grows undoubtedly, although that behaviour would make sense economically. 
+
+As seen in the plot, there is only mild flattening behaviour observed and we have relatively much less data in that tail, so we use with the linear form.
+
+Moreover, DTI values greater than $30$\footnote{`transf_dti`$>30\iff\text{DTI}>45$} are near the typical maximum tolerance for mortgages to be underwritten, and in fact Freddie Mac often caps the tolerated DTI at 45 or 50, which means that our observations for DTI values above 45 must be special cases which somehow qualified for the loan based on other more attractive criteria. This would explain why we observe the empirical logit hazard flattening out for DTI values in that range.
+
+Thus, for practical reasons, we use the linear functional form for `transf_dti` even though the quadratic form achieves better AIC. 
+
+*the two paragraphs before the one just above are basically two alternate final justifications for using the linear form. THe question of which one to use basically boils down to what question am I trying to answer with the model; If im trying to model PD just for Freddie Mac's underwritten loans, I should actually model out the flat threshold after 30. If im trying to model PD in a general sense applicable to non-Freddie-underwritten loans, then I should just use plain linear because the deviation observed can be explained by what is effectively a sampling bias.*
+
+
+*consult a prof or practitioner about DTI - was this way of dealing with it valid?*
+
+```{r}
+predictor_names <- c(predictor_names, "transf_dti")
+```
+
+We do not include the LTV ratio at origination since we are already using the approximate dynamic LTV as derived and analysed earlier. 
+
+## Multicollinearity
+
+```{r}
+
+# Save space by only selecting index variables or predictors that we plan to use
+full_df <- full_df %>% select(loan_sequence_number, date, y, 
+                              all_of(predictor_names))
+
+num_df <- full_df %>% select_if(is.numeric) %>% select(-y)
+
+# Correlation matrix heat map for all continuous variables
+cor_num <- cor(num_df)
+corrplot(cor_num, method="color", tl.col="black", tl.cex=0.9, 
+         number.cex=0.9, addCoef.col="black", tl.srt=45, number.font=3, 
+         title="Correlations (Continuous Variables)")
+
+# Check VIFs for all variables
+sample_fit <- glm(reformulate(predictor_names, response="y"), 
+                  data = sample_df, family = binomial)
+check_collinearity(sample_fit)
+
+summary(sample_fit)
+
+sample_fit2 <- glm(reformulate(setdiff(predictor_names, "transf_dti"), 
+                               response="y"), 
+                   data = sample_df, family = binomial)
+AIC(sample_fit, sample_fit2)
+rm(sample_fit2)
+```
+The only severe multicollinearity is between `last_unrate_chg_pos` and `last_rate_cut`, which makes sense since the Fed tends to cut rates when unemployment is high. The estimated coefficients are positive for both variables, as expected. From the fitted model above, we see that the effect size of `last_unrate_chg_pos` is around 0.1 after adjusting for the roughly 0.2-sized effect of `last_rate_cut`. This tells us that `last_unrate_chg_pos` has a stronger association with hazard, which makes sense since the Fed's policy rate changes are mostly reactionary whereas the unemployment rate is more of a direct cause. Given the larger effect size and smaller standard error, we use `last_unrate_chg_pos` instead of `last_rate_cut`.
+
+```{r}
+predictor_names <- predictor_names[predictor_names != "last_rate_cut"]
+```
+
+
+Now we will compare the model with and without age of loan, which is correlated with all of the strongly trending macro variables.
+```{r}
+sample_fit3 <- glm(reformulate(setdiff(predictor_names, "loan_age"), 
+                               response="y"), 
+                   data = sample_df, family = binomial)
+AIC(sample_fit, sample_fit3)
+```
+
+We keep the loan age variable in the model based on the lower AIC value.
+
+```{r}
+library(splines)
+
+sample_fit4 <- glm(reformulate(c(setdiff(predictor_names, "loan_age"), 
+                                 "ns(loan_age, df=2)"), response="y"), 
+                   data = sample_df, family = binomial)
+sample_fit5 <- glm(reformulate(c(setdiff(predictor_names, "loan_age"), 
+                                 "ns(loan_age, df=3)"), response="y"), 
+                   data = sample_df, family = binomial)
+sample_fit6 <- glm(reformulate(c(setdiff(predictor_names, "loan_age"), 
+                                 "ns(loan_age, df=4)"), response="y"), 
+                   data = sample_df, family = binomial)
+
+AIC(sample_fit, sample_fit4, sample_fit5, sample_fit6) %>% 
+  arrange(AIC)
+
+rm(sample_fit2, sample_fit3, sample_fit4, sample_fit5, sample_fit6)
+```
+
+We get a decently sized drop in AIC relative to the linear form by using natural splines with df=2, although the subsequent drops in AIC from increasing the df are very small and primarily reflect the model's ability to absorb residual origination and calendar-time variation rather than a stable age-specific pattern. Given the role of loan age as a control fro the baseline hazard rather than a structural driver of risk, we use the low-dimensional spline form with df=2. This argument is reinforced by the plots from the [Identifying Possible Age of Loan Effects](#identifying-possible-age-of-loan-effects) section.
+
+```{r}
+predictor_names <- predictor_names[predictor_names != "loan_age"]
+predictor_names <- c(predictor_names, "ns(loan_age, df=2)")
+```
+
+# Interactions
+
+Certain interaction terms are effectively already encoded as transformed variables (e.g. `last_vtl_est` is a function of the product $\text{LTV}\cdot\text{HPAO}$).
+
+```{r}
+sample_fit8 <- glm(reformulate(c(predictor_names, 
+                                 "loan_purpose * occupancy_status"), 
+                               response="y"), 
+                   data = sample_df, family = binomial)
+
+AIC(sample_fit, sample_fit8)
+```
+
+ We consider the interaction between loan purpose and occupancy status. Based on the `r AIC(sample_fit)-AIC(sample_fit8)` drop in AIC, we include the interaction term. 
+ 
+```{r}
+predictor_names <- predictor_names[predictor_names != "loan_purpose"]
+predictor_names <- predictor_names[predictor_names != "occupancy_status"]
+predictor_names <- c(predictor_names, "loan_purpose * occupancy_status")
+
+sample_fit <- glm(reformulate(predictor_names, response="y"), 
+                   data = sample_df, family = binomial)
+```
+
+```{r}
+sample_fit9 <- glm(reformulate(c(predictor_names, "last_vix * cr_spread"), 
+                               response="y"), 
+                   data = sample_df, family = binomial)
+
+AIC(sample_fit, sample_fit9)
+```
+
+We see only a very small improvement in AIC with the VIX x credit spread interaction term, so we do not use it.
+
+
+# Train, Interpret, and Validate Final Model
+
+## Training
+
+```{r}
+rm(sample_fit, sample_fit8) # free up space
+gc()
+```
+
+```{r}
+train_fit <- glm(reformulate(predictor_names, response="y"), 
+                   data = train_df, family = binomial, 
+                 x=FALSE, y=FALSE, model=FALSE)
+
+(train_sum <- summary(train_fit))
+
+train_coefs <- coef(train_fit)
+
+```
+
+## Interpetation
+
+We will now provide some examples of parameter interpretation for this model. Recall from the loan data preparation section that all of the mortgages in our final cleaned dataset were fixed-rate mortgages without prepayment penalties. Thus, when we refer to "any loan" we really mean any fixed-rate mortgage without prepayment penalties.
+
+For any fixed $k$, we have
+$$\begin{aligned}
+\beta_j^{(L)} &= \logit\pi_{it}|_{x_{itj}=k+1}-\logit|_{x_{itj}=k} \\
+&= \ln\Bigg(\frac{\pi_{it}/(1-\pi_{it})|_{x_{itj}=k+1}}{\pi_{it}/(1-\pi_{it})|_{x_{itj}=k}} \Bigg)
+\end{aligned}$$
+where $j$ is the index for a continuous predictor $x_{itj}$.
+
+Our model based estimate for the odds ratio (OR) of the event of default next month for one additional percentage of credit spread vs. some fixed credit spread is `r round(exp(train_coefs[['cr_spread']]), 3)` while adjusting for macroeconomic variables and loan-specific variables.
+
+This can be rephrased; we estimate that each $1\%$ increase in credit spread is associated with a `r round(100*(exp(train_coefs[['cr_spread']])-1), 1)` relative increase in the odds of default next month while adjusting for macroeconomic variables and loan-specific variables.
+
+We estimate that the OR of default next month for a loan that has currently missed one payment vs. one that has not missed any payments is `r round(exp(train_coefs[['deliq_num1']]), 3)` adjusted for macroeconomic variables and loan-specific variables.
+
+
+Now we look at the predicted PD values as the number of missed payments increases while holding the other predictor values constant as some manually chosen values; we select somewhat average values for the loan-level covariates (purchased property, primary residence, modest credit score of 750, etc.) although we choose a decently elevated VIX value of 17 and a high credit spread of 3\%.
+
+```{r} 
+### check region encoding - why is there NE and N?
+
+x_df0 <- data.frame(
+  last_vix = 17, 
+  cr_spread = 3, 
+  last_unrate_chg_pos = 0.3, 
+  last_infl_yoy_low = "0", 
+  last_vtl_est = 0.4, 
+  deliq_num = "0", 
+  region = "South", 
+  long_term = "<25y", 
+  credit_score = 750, 
+  dti_missing = FALSE, 
+  transf_dti = 5, 
+  loan_age = 4, 
+  loan_purpose = "P", 
+  occupancy_status = "P" 
+)
+prob_est0 <- predict(train_fit, newdata=x_df0, type="response")
+
+x_df1 <- x_df0 %>% 
+  mutate(deliq_num = "1")
+prob_est1 <- predict(train_fit, newdata=x_df1, type="response")
+
+x_df2 <- x_df1 %>% 
+  mutate(deliq_num = "2")
+prob_est2 <- predict(train_fit, newdata=x_df2, type="response")
+
+plot_df <- data.frame(
+  deliq = c(0,1,2), 
+  pd = c(prob_est0, prob_est1, prob_est2)
+) %>% 
+  mutate(
+    rel_increase = pd / lag(pd, 1) - 1
+  )
+
+plot_df %>% kable()
+
+```
+
+The estimated 1-month ahead probability of default for this loan under these macro conditions increases several orders of magnitude as the number of currently missed payments increases. 
+
+
+```{r}
+get_mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+library(sandwich)
+
+new_df <- data.frame(
+  last_vix = median(train_df$last_vix), 
+  cr_spread = median(train_df$cr_spread), 
+  last_unrate_chg_pos = median(train_df$last_unrate_chg_pos), 
+  last_infl_yoy_low = get_mode(train_df$last_infl_yoy_low), 
+  last_vtl_est = median(train_df$last_vtl_est), 
+  deliq_num = get_mode(train_df$deliq_num), 
+  region = get_mode(train_df$region), 
+  long_term = get_mode(train_df$long_term), 
+  credit_score = median(train_df$credit_score), 
+  dti_missing = FALSE, 
+  transf_dti = median(train_df$transf_dti), 
+  loan_age = seq(0, 120, by=1), 
+  loan_purpose = get_mode(train_df$loan_purpose), 
+  occupancy_status = get_mode(train_df$occupancy_status) 
+)
+
+expected_factors <- names(train_fit$xlevels)
+for (col in expected_factors) {
+  if (col %in% names(new_df)) {
+    new_df[[col]] <- factor(new_df[[col]], levels = train_fit$xlevels[[col]])
+  }
+}
+
+vcov_clustered <- vcovCL(train_fit, cluster = ~loan_sequence_number)
+
+pred_link <- predict(train_fit, newdata = new_df, type = "link")
+
+x_new <- model.matrix(delete.response(terms(train_fit)), newdata=new_df)
+se_link <- sqrt(diag(x_new %*% vcov_clustered %*% t(x_new)))
+
+plot_df <- data.frame(
+  loan_age = new_df$loan_age,
+  fit = pred_link,
+  se = se_link
+) %>%
+  mutate(
+    lower = fit - 1.96 * se,
+    upper = fit + 1.96 * se
+  )
+
+# map everything to probability scale (apply expit function)
+prob_df <- plot_df %>%
+  mutate(
+    prob_fit = plogis(fit),
+    prob_lower = plogis(lower),
+    prob_upper = plogis(upper)
+  )
+
+ggplot(prob_df, aes(x = loan_age, y = prob_fit)) +
+  geom_ribbon(aes(ymin = prob_lower, ymax = prob_upper), fill = "blue", alpha = 0.2) +
+  geom_line(color = "blue", linewidth = 1) +
+  theme_minimal() +
+  labs(
+    x = "Loan age (months)",
+    y = "Predicted 1-month PD",
+    title = "Partial Dependence of Loan Age on PD", 
+    subtitle = "Standard Errors clustered by Loan ID"
+  )
+```
+
+
+```{r}
+# compare CRSE-based covariance matrix with regular covariance matrix
+vcov_reg <- train_sum$cov.unscaled
+cat("Frobenius Norm of Regulary Cov Matrix:", norm(vcov_reg, type="f"))
+cat("Frobenius Norm of CRSE Cov Matrix:", norm(vcov_clustered, type="f"))
+
+# look at where the CRSE-based matrix entries are different
+diff_mat <- vcov_clustered - vcov_reg
+library(reshape2)
+diff_df <- melt(diff_mat)
+colnames(diff_df) <- c("var1", "var2", "difference")
+ggplot(diff_df, aes(var1, var2, fill = difference)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, name = "Covariance\nDifference") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Clustered vs. Regular Variance-Covariance Matrix",
+       subtitle = "Difference: vcov_clustered - vcov_reg",
+       x = "Predictor", y = "Predictor")
+
+```
+
+The above heat map shows the matrix difference between the regular covariance matrix (inverse observed information matrix) and the cluster-robust (CR) covariance matrix. 
+
+The CR method inflates the estimated variance for the intercept, and the only other large differences are for the loan purpose and loan purpose x occupancy status interaction terms. Even for these covariances, the differences are small (at most about 10\%). This suggests that most within-loan dependence was already adequately modeled by our time-dependent covariates.
+
+```{r}
+gc()
+```
+
+
+## Validation (Residual Diagnostics)
+
+```{r}
+res <- residuals(train_fit, type = "deviance")
+idx <- sample.int(length(res), 2e6)
+plot(res[idx])
+acf(res[idx], na.action = na.pass)
+```
+
+The residuals look very much like a white noise process, and the large spikes are expected for a rare event model.
+
+# Prediction Evaluation
+
+We now test the model selected from earlier on "out-of-time" (test set) data.
+
+```{r}
+library(ROCR)
+
+p_hat <- predict(train_fit, newdata=test_df, type="response")
+y_test <- test_df$y
+
+pred <- prediction(p_hat, y_test)
+roc_obj <- performance(pred, "tpr", "fpr")
+auc_val <- performance(pred, "auc")@y.values[[1]]
+
+plot(roc_obj, col="blue", lwd=2, main="ROC Curve (Test Set)")
+abline(a=0, b=1, col="red", lty=2)
+text(0.35, 0.6, paste("AUC =", round(auc_val, 4)))
+
+rm(pred)
+
+metrics_at_threshold <- function(t, p, y) {
+  yhat <- as.integer(p >= t)
+  TP <- sum(yhat == 1 & y == 1)
+  FP <- sum(yhat == 1 & y == 0)
+  FN <- sum(yhat == 0 & y == 1)
+  TN <- sum(yhat == 0 & y == 0)
+
+  precision <- ifelse(test = (TP + FP) == 0, yes = NA, no = TP / (TP + FP))
+  recall <- ifelse(test = (TP + FN) == 0, yes = NA, no = TP / (TP + FN))
+  f1 <- ifelse(test = 
+                 is.na(precision) | is.na(recall) | (precision + recall) == 0, 
+               yes = NA, no = 2 * precision * recall / (precision + recall))
+  
+  list(threshold = t, TP = TP, FP = FP, FN = FN, TN = TN, 
+       precision = precision, recall = recall, F1 = f1)
+}
+
+t_event_rate <- mean(train_df$y) # using empirical event rate from training set
+m_event <- metrics_at_threshold(t_event_rate, p_hat, y_test)
+
+cat("\n--- Metrics @ event-rate threshold ---\n")
+print(m_event)
+
+
+# Sort by predicted probabilities
+ord <- order(p_hat)
+p_ord <- p_hat[ord]
+y_ord <- y_test[ord]
+
+# Cumulative distributions
+cdf_event    <- cumsum(y_ord) / sum(y_ord)
+cdf_nonevent <- cumsum(1 - y_ord) / sum(1 - y_ord)
+
+# KS statistic and cutoff
+diff_cdf <- abs(cdf_event - cdf_nonevent)
+ks_stat <- max(diff_cdf)
+ks_idx <- which(diff_cdf == ks_stat)
+ks_cut <- p_ord[ks_idx]
+
+cat("KS statistic:", ks_stat)
+
+cdf_df <- tibble(
+  score = p_ord,
+  event = cdf_event,
+  nonevent = cdf_nonevent
+)
+
+cdf_long <- cdf_df %>%
+  pivot_longer(cols = c(event, nonevent),
+               names_to = "Group",
+               values_to = "CDF")
+
+ggplot(cdf_long, aes(x = score, y = CDF, color = Group)) +
+  geom_line(linewidth = 2, alpha=0.8) +
+  geom_vline(xintercept = ks_cut,
+             linetype = "dashed",
+             linewidth = 0.8,
+             color = "black") +
+  annotate("text", x = ks_cut, y = 0.5,
+           label = paste0("KS = ", round(ks_stat, 3)),
+           hjust = -0.1, size = 4) +
+  scale_color_manual(
+    values = c(event = "firebrick", nonevent = "steelblue"),
+    labels = c("Default", "Non-default")
+  ) +
+  theme_minimal() +
+  labs(x = "Predicted PD", y = "Empirical CDF", color = "",
+    title = "KS Plot: Empirical CDFs of Predicted PD",
+    subtitle = paste("Maximum separation at PD =", signif(ks_cut, 3))
+  )
+```
+
+We now assess calibration on the training data.
+
+```{r}
+p_fit <- train_fit$fitted.values
+y_train <- train_df$y
+
+cal_df <- data.frame(p = p_fit, y = y_train) %>% 
+  arrange(p) %>% 
+  mutate(event_cs = cumsum(y), 
+         bin = pmax(1, ceiling(event_cs / 200))) %>% 
+  group_by(bin) %>%
+  summarise(
+    p_mean = mean(p),
+    y_rate = mean(y),
+    n = n(),
+    .groups = "drop"
+  )
+
+x_axis = c(min(cal_df$p_mean), max(cal_df$p_mean))
+y_axis = c(min(cal_df$y_rate), max(cal_df$y_rate))
+
+ggplot(cal_df, aes(x = p_mean, y = y_rate)) +
+  geom_point(aes(size = n), alpha = 0.7, color = "blue") +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, alpha = 0.5) +
+  theme_minimal() +
+  labs(x = "Mean predicted PD (bin)", y = "Observed default rate (bin)",
+    title = "Calibration Plot")
+
+```
+
+
+# Limitations and Possible Improvements
+
+\begin{itemize}
+  \item Use model to predict defaults in stress testing scenarios
+    \begin{itemize}
+      \item Poisson regression on default counts may be better suited so that the analysis is portfolio-level rather than loan-level.
+    \end{itemize}
+
+  \item Freddie Mac sampling bias
+
+  \item Competing risks
+    \begin{itemize}
+      \item Instead of treating prepayment as censoring, explicitly model it as a competing risk.
+    \end{itemize}
+
+  \item Definition of default event
+    \begin{itemize}
+      \item Loosen the definition to avoid forcing default to be an absorbing state (do not drop rows after default).
+      \item Use a count or indicator of previous defaults as a covariate in the model.
+    \end{itemize}
+
+  \item Variables to investigate or augment
+    \begin{itemize}
+      \item Try additional interaction terms.
+      \item Consider using some or all variables that enter loan pricing rather than the credit spread, which is derived from loan prices determined by another model.
+        \begin{itemize}
+          \item Freddie Mac does not provide this data, so it would need to be sourced elsewhere.
+        \end{itemize}
+      \item Build a separate model for dynamic home price prediction.
+        \begin{itemize}
+          \item Use the home price estimate to construct an alternative dynamic LTV or VTL.
+          \item Compare the full model using this estimate against the current model.
+        \end{itemize}
+      \item Macroeconomic uncertainty (e.g.\ JLNUM3M).
+      \item Policy uncertainty (e.g.\ USEPUINDXD).
+      \item Create an approximate dynamic DTI variable after origination.
+        \begin{itemize}
+          \item Use income and/or debt indices similarly to how HPI was used to estimate dynamic LTV.
+          \item This is more challenging than dynamic LTV estimation because:
+            \begin{itemize}
+              \item Both debt and income are dynamic, whereas only home value is dynamic for LTV.
+              \item Income distributions may exhibit greater skewness and kurtosis than home prices.
+            \end{itemize}
+        \end{itemize}
+      \item Try using the un-normalized current actual unpaid principal balance variable (\texttt{current\_actual\_upb}).
+    \end{itemize}
+
+  \item Dealing with class imbalance
+    \begin{itemize}
+      \item Try oversampling or importance sampling.
+    \end{itemize}
+
+  \item Alternative models to compare
+    \begin{itemize}
+      \item Logistic regression with mixed effects to capture loan-specific variation (random effect for each loan $i$), a common panel-data approach that can improve standard error estimation.
+      \item Poisson regression for the \emph{count} of defaults.
+      \item XGBoost or other modern classification models.
+      \item Neural networks with SHAP values for interpretability.
+    \end{itemize}
+\end{itemize}
+
+  
+  
+
+
+
+
+

@@ -1,0 +1,26 @@
+# Ignore data and large files
+data/
+*.csv
+*.tsv
+*.txt
+*.parquet
+*.feather
+*.zip
+*.gz
+*.rds
+*.rdata
+
+# Python
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+
+# R / RStudio
+.Rhistory
+.RData
+.Rproj.user/
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
