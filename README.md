@@ -34,6 +34,9 @@ The scatterplots of the covariates plotted against the logit transform of the em
 - `deliq_num` (current number of missed payments): very strong positive association (e.g. a loan can only reach 3 missed payments once it missed 2 payments)
 - `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak positive association
     - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
+<p align="center">
+    <img src="figures/deliq_num_1.png" width="400">
+</p>
 
 **Borrower Risk at Origination (Loan-Dependent)**
 - `cr_spread` (origination credit spread): strong positive association
