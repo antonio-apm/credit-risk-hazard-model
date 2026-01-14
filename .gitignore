@@ -27,3 +27,6 @@ __pycache__/
 
 # API Keys
 config/fred_api_key.txt
+
+# Private Project Notes
+primary-code/Private-Notes-for-DTMC.txt
