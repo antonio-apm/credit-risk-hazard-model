@@ -35,7 +35,7 @@ The scatterplots of the covariates plotted against the logit transform of the em
 - `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak positive association
     - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
 <p align="center">
-    <img src="figures/deliq_num_1.png" width="400">
+    <img src="figures/deliq_num_1.png" width="500">
 </p>
 
 **Borrower Risk at Origination (Loan-Dependent)**
@@ -53,9 +53,26 @@ The scatterplots of the covariates plotted against the logit transform of the em
 - `last_unrate_chg_pos` (positive part of the YoY change in the unemployment rate): strong positive association  
 - `last_infl_yoy_low` (indicator for inflation rate being at or below 2.5\%): shift in distribution of risk
 <p align="center">
+  <figure style="display:inline-block; margin:10px;">
     <img src="figures/last_vix_1.png" width="400">
+    <figcaption style="text-align:center; font-size:0.9em;">
+      (a) VIX (Volatility Index)
+    </figcaption>
+  </figure>
+
+  <figure style="display:inline-block; margin:10px;">
     <img src="figures/last_unrate_chg_pos_1.png" width="400">
-    <img src="figures/last_infl_yoy_low_1.png" width="400"> 
+    <figcaption style="text-align:center; font-size:0.9em;">
+      (b) Max(YoY Change in Unemployment Rate, 0)
+    </figcaption>
+  </figure>
+
+  <figure style="display:inline-block; margin:10px;">
+    <img src="figures/last_infl_yoy_low_1.png" width="400">
+    <figcaption style="text-align:center; font-size:0.9em;">
+      (c) Low YoY Inflation Indicator
+    </figcaption>
+  </figure>
 </p>
 
 **Controls**
