@@ -18,7 +18,7 @@
   - **Train:** 2013/02 $-$ 2021/09  
   - **Test:** 2021/10 $-$ 2025/05  
 - All loans are fixed-rate mortgages (FRMs) without prepayment penalties (non-PPM) in the sample.
-- **Total size:** ~ 18 GB
+- **Total size:** roughly 18 GB (roughly 300,000 loans; cohort of 100,000 loans for each vintage)
 - Missing DTI handled with:
   - `dti_missing` indicator
   - median-imputed DTI used inside `transf_dti = |DTI − 15|`
