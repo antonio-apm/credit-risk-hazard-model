@@ -16,7 +16,6 @@ library(corrplot) # correlation matrix heat maps
 library(performance) # VIF calculations and visualizations
 library(knitr) # polished display of tables
 library(glmnet) # regularized GLMs
-library(survival) # for KM estimator
 library(survival) # Kaplan-Meier estimator
 library(splines) # natural splines
 
@@ -265,6 +264,28 @@ catsum_df <- bind_rows(results) %>%
 
 # Save categorical summary
 saveRDS(catsum_df, file="objects/catsum_df.rds")
+
+haz_deliq <- full_df %>%
+  group_by(deliq_num, date) %>%
+  summarise(
+    haz = mean(y, na.rm = TRUE), .groups = "drop") 
+p <- ggplot(haz_deliq %>% filter(haz > 0 & haz < 1), 
+            aes(x = qlogis(haz), fill = deliq_num)) +
+  geom_density(alpha = 0.6, position = "identity") +
+  scale_fill_manual(
+    values = c("steelblue", "lightpink", "darkred"),
+    name   = "deliq_num",
+    labels = c("0", "1", "2")
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Est. Logit(Hazard)",
+    y = "Kernel Density Estimate",
+    title = "Overlapping Densities by Current Delinquency State"
+  )
+ggsave("figures/deliq_num.pdf", plot = p, width = 8, height = 8)
+ggsave("figures/deliq_num_1.png", plot = p, width = 8, height = 8, dpi = 200)
+rm(haz_deliq)
 
 
 # Looking at loan term
