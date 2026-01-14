@@ -26,6 +26,13 @@
   - median-imputed DTI used inside `transf_dti = |DTI − 15|`
 
 ## Key Predictors (Greatest Signal)
+<div>
+    <img src="figures/cr_spread_1.png" width="350">
+    <img src="figures/credit_score_1.png" width="350"> 
+    <img src="figures/last_unrate_chg_pos_1.png" width="350">
+    <img src="figures/last_infl_yoy_low_1.png" width="350"> 
+    <img src="figures/inv_eltv_1.png" width="350">
+</div>
 
 **Behavioural (Loan- and Time-Dependent)**
 - `deliq_num` (missed-payments state): dominates short-horizon PD
@@ -82,7 +89,7 @@
   - **F1 = 0.51** and a very small decrease in recall
 
 ## Repo Notes
-- Report is written in R Markdown; heavy computations are done in separate code-only R scripts and saved as RDS objects and figures.
+- Report is written in R Markdown; heavy computations are done in separate code-only R scripts and saved as RDS objects and figures. 
 - Key generated artifacts:
   - `objects/*.rds` (model outputs, tables)
   - `figures/*` (EDA + evaluation plots)
