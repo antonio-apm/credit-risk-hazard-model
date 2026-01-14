@@ -5,9 +5,9 @@
 
 ## Overview
 - This project builds an early-warning probability of default (PD) model that predicts whether a mortgage will default in the next month using information available in the current month. We define "default" as the event of a loan having 3+ missed payments.
-- The model is trained on loan-month panel data which is comprised of loan origination characteristics, monthly loan performance, and monthly macroeconomic variables.
+- The model is trained on loan-month panel data that is comprised of loan origination characteristics, monthly loan performance, and monthly macroeconomic variables.
 - The model is state-dependent in the sense that one of the predictors is the current delinquency state (number of missed payments).
-- This is designed for applications to credit portfolio monitoring (flagging loans with rising risk), not "ever-default" origination pricing.
+- This is designed for applications in credit portfolio monitoring (e.g. flag loans with rising risk) and account management (e.g. offer deals to stable borrowers), not "ever-default" origination pricing.
 - *Note:*
     - Additional summary points about the data and methodology are provided at the end of this README document.
     - The comprehensive model definition (with math) is typeset with LaTeX in the full report "Mortgage-Credit-Risk-Regression.pdf".
@@ -42,7 +42,7 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 - `cr_spread` (origination credit spread): strong positive association
     - Derived by deducting the yield on the 10-year Treasury at the time of origination from the interest rate on the loan at origination
 - `credit_score` (FICO): strong negative association  
-- `dti_missing` and `transf_dti` (DTI at origination): U-shaped (convex non-montone) association
+- `dti_missing` and `transf_dti` (DTI at origination): U-shaped (convex non-monotone) association
 <p align="center">
     <img src="figures/cr_spread_1.png" width="400">
     <img src="figures/credit_score_1.png" width="400"> 
@@ -94,7 +94,7 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
   - **Recall (Sensitivity) = 0.98**
   - **Precision = 0.20**
   - **F1 = 0.30**
-- Raising the threshold to around **0.001** (a little less than double the emprirical event-rate) can improve the balance:
+- Raising the threshold to around **0.001** (a little less than double the empirical event-rate) can improve the balance:
   - **F1 = 0.51** and a very small decrease in recall
 
 ### Calibration (Train Set)
@@ -110,7 +110,7 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 
 ## Additional Notes on Data and Methodology
 - In order to have a sufficient number of "events" (defaults) in the data, we define default as the event of a loan having 3+ missed payments.
-- Macroecnoomic variables are lagged to prevent leakage since the data for month $t$ is published in month $t+1$.
+- Macroeconomic variables are lagged to prevent leakage since the data for month $t$ is published in month $t+1$.
 - Due to the panel structure of the data, we use cluster-robust standard errors (clustered on loan IDs) to account for within-loan dependence over time.
 - There is inherent censoring at data cutoff and enforced right-truncation by treating prepayment as censoring.
 
