@@ -35,7 +35,7 @@ The scatterplots of the covariates plotted against the logit transform of the em
 - `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak positive association
     - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
 <p align="center">
-  <img src="figures/deliq_num_1.png" width="450">
+  <img src="figures/deliq_num_1.png" width="400">
 </p>
 
 **Borrower Risk at Origination (Loan-Dependent)**
