@@ -28,7 +28,7 @@
 ## Key Predictors
 Some of the key predictors used in the model are summarized below. 
 
-The plots show scatterplots of the variables vs. the logit transform of the empirical hazard rate.
+The scatterplots of the covariates plotted against the logit transform of the empirical hazard rate on the y-axis.
 
 **Loan Performance (Loan- and Time-Dependent)**
 - `deliq_num` (missed-payments state): dominates short-horizon PD
