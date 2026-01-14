@@ -26,17 +26,14 @@
   - median-imputed DTI used inside `transf_dti = |DTI − 15|`
 
 ## Key Predictors
-Some of the key predictors used in the model are summarized below. The plots show scatterplots of the variables vs. the logit transform of the empirical hazard rate.
+Some of the key predictors used in the model are summarized below. 
 
-**Behavioural (Loan- and Time-Dependent)**
+The plots show scatterplots of the variables vs. the logit transform of the empirical hazard rate.
+
+**Loan Performance (Loan- and Time-Dependent)**
 - `deliq_num` (missed-payments state): dominates short-horizon PD
-
-**Collateral (Loan- and Time-Dependent)**
-- `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak-to-moderate positive association
+- `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak positive association
     - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
-<p align="center">
-    <img src="figures/inv_eltv_1.png" width="400">
-</p>
 
 **Borrower Risk at Origination (Loan-Dependent)**
 - `cr_spread` (origination credit spread): strong positive association
