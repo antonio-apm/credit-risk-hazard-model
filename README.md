@@ -62,14 +62,11 @@
 
 ## Performance Evaluation
 
-### ROC Curve (Test Set)
-<p align="center">
-  <img src="figures/roc_curve_1.png" width="450">
-</p>
-
-### KS Plot (Test Set)
-<p align="center">
-  <img src="figures/ks_plot_1.png" width="450">
+### ROC Curve and KS Plot (Test Set)
+<p align="center"> 
+    <img src="figures/roc_curve_1.png" width="450"> 
+    <img src="figures/ks_plot_1.png" width="450">
+    <img src="figures/threshold_metrics_zoom_1.png" width="550">
 </p>
 
 ### Calibration (Train Set)
@@ -77,15 +74,9 @@
   <img src="figures/cal_plot_1.png" width="450">
 </p>
 
-## Results (Test Set)
+### Results (Test Set)
 - **AUC = 0.99** (very strong ranking performance)
 - **KS = 0.98** (large separation between default and non-default)
-
-## Thresholding Tradeoff:
-<p align="center">
-  <img src="figures/threshold_metrics_zoom_1.png" width="550">
-</p>
-
 - At *empirical event-rate threshold*:
   - **Recall (Sensitivity) = 0.98**
   - **Precision = 0.20**
