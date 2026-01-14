@@ -53,6 +53,10 @@
 ### ROC Curve (Test Set)
 ![ROC Curve](figures/roc_curve_1.png)
 
+<p align="center">
+  <img src="figures/roc_curve_1.png" width="450">
+</p>
+
 ### KS Plot (Test Set)
 ![KS Plot](figures/ks_plot_1.png)
 
