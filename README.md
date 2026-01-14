@@ -62,16 +62,11 @@
 
 ## Performance Evaluation
 
-### ROC Curve and KS Plot (Test Set)
+### Key Metrics on Test-Set Predictions
 <p align="center"> 
     <img src="figures/roc_curve_1.png" width="450"> 
     <img src="figures/ks_plot_1.png" width="450">
     <img src="figures/threshold_metrics_zoom_1.png" width="550">
-</p>
-
-### Calibration (Train Set)
-<p align="center">
-  <img src="figures/cal_plot_1.png" width="450">
 </p>
 
 ### Results (Test Set)
@@ -83,6 +78,11 @@
   - **F1 = 0.30**
 - Raising the threshold to around **0.001** (a little less than double the emprirical event-rate) can improve the balance:
   - **F1 = 0.51** and a very small decrease in recall
+
+### Calibration (Train Set)
+<p align="center">
+  <img src="figures/cal_plot_1.png" width="450">
+</p>
 
 ## Repo Notes
 - Report is written in R Markdown; heavy computations are done in separate code-only R scripts and saved as RDS objects and figures. 
