@@ -12,6 +12,7 @@
 - In order to have a sufficient number of "events" in the data, we define default as the event of a loan having 3+ missed payments.
       - Also note that we have censoring at data cutoff and prepayment is treated as censoring.
 - This is designed for applications to credit portfolio monitoring (flagging loans with rising risk), not "ever-default" origination pricing.
+- *Note:* The comprehensive model definition (with math) is typeset with LaTeX in the report "Mortgage-Credit-Risk-Regression.pdf".
 
 ## Data
 - **Freddie Mac Single-Family Loan-Level Dataset (SFLLD)**: vintages **2013, 2016, 2020**
@@ -24,33 +25,22 @@
   - `dti_missing` indicator
   - median-imputed DTI used inside `transf_dti = |DTI − 15|`
 
-## Model
-Discrete-time hazard / early-warning PD model:
-
-$Y_{it} = 1_{[\text{default in month }t+1]}$
-
-$\text{logit}(\pi_{it}) = X_{it}^\top\beta^{(L)} + Z_t^\top\beta^{(M)}$
-
-Where $\pi_{it}$ is the **1-month-ahead PD** given survival up to month $t$.
-
-## Key Predictors (high signal)
-**State / behavior**
-- `deliq_num` (missed-payments state): dominates short-horizon PD (orders-of-magnitude effect)
-
-**Pricing / borrower risk**
-- `cr_spread` (origination credit spread): strong positive association  
+## Key Predictors (Greatest Signal)
+**Behavioural (Loan- and Time-Dependent)**
+- `deliq_num` (missed-payments state): dominates short-horizon PD 
+**Borrower Risk at Origination (Loan-Dependent)**
+- `cr_spread` (origination credit spread): strong positive association
+    - Derived by deducting the yield on the 10-year Treasury at the time of origination from the interest rate on the loan at origination
 - `credit_score` (FICO): strong negative association  
-- `dti_missing` and `transf_dti = |DTI − 15|`: capture underwriting/affordability effects
-
-**Macro / market regime (lagged)**
-- `last_vix` (volatility / uncertainty): higher VIX → higher default risk  
-- `last_unrate_chg_pos = max(Δ12 UR, 0)` (positive unemployment change): strong positive association  
-- `last_infl_yoy_low` (inflation ≤ 2.5% indicator): distributional shift in risk
-
-**Collateral**
-- `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): higher equity → lower risk
-
-Controls
-- region, occupancy, loan purpose, long-term indicator, and **baseline hazard control** via `ns(loan_age, df=2)`.
+- `dti_missing` and `transf_dti`$=|\text{DTI}-15|$: capture underwriting/affordability effects
+**Macroeconomic and Market-Based (Time-Dependent)**
+- `last_vix` (lagged CBOE Volatility Index): moderate-to-strong positive association
+- `last_unrate_chg_pos`$=\max(\Delta_{12}\text{UR},0)$ (positive part of the YoY change in the unemployment rate): strong positive association  
+- `last_infl_yoy_low` (indicaator for inflation rate being at or below 2.5\%): shift in distribution of risk
+**Collateral (Loan- and Time-Dependent)**
+- `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak-to-moderate positive association
+    - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
+*Controls*
+- region, occupancy status, loan purpose, long-term loan indicator, and *baseline hazard control* using natural splines transformation of loan age with 2 degrees of freedom.
 
 
