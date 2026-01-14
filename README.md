@@ -27,8 +27,10 @@
 ## Model
 Discrete-time hazard / early-warning PD model:
 $$
-Y_{it} = \mathbb{1}[\text{default in month } t+1], \quad
-\text{logit}(\pi_{it}) = X_{it}^\top\beta^{(L)} + Z_t^\top\beta^{(M)}
+\begin{aligned}
+Y_{it} &= 1_{\{\text{default in month }t+1\}} \\
+\text{logit}(\pi_{it}) &= X_{it}^\top\beta^{(L)} + Z_t^\top\beta^{(M)}
+\end{aligned}
 $$
 Where $\pi_{it}$ is the **1-month-ahead PD** given survival up to month $t$.
 
