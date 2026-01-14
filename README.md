@@ -51,13 +51,13 @@
 ## Performance Evaluation
 
 ### ROC Curve (Test Set)
-![ROC Curve](figures/roc_curve.pdf)
+![ROC Curve](figures/roc_curve.png)
 
 ### KS Plot (Test Set)
-![KS Plot](figures/ks_plot.pdf)
+![KS Plot](figures/ks_plot.png)
 
 ### Calibration (Train Set)
-![Calibration Plot](figures/cal_plot.pdf)
+![Calibration Plot](figures/cal_plot.png)
 
 ## Results (Out-of-Time Test Set)
 - **AUC = 0.99** (very strong ranking performance)
