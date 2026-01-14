@@ -30,6 +30,10 @@
 **Behavioural (Loan- and Time-Dependent)**
 - `deliq_num` (missed-payments state): dominates short-horizon PD
 
+**Collateral (Loan- and Time-Dependent)**
+- `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak-to-moderate positive association
+    - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
+
 **Borrower Risk at Origination (Loan-Dependent)**
 - `cr_spread` (origination credit spread): strong positive association
     - Derived by deducting the yield on the 10-year Treasury at the time of origination from the interest rate on the loan at origination
@@ -41,13 +45,36 @@
 - `last_unrate_chg_pos`$=\max(\Delta_{12}\text{UR},0)$ (positive part of the YoY change in the unemployment rate): strong positive association  
 - `last_infl_yoy_low` (indicaator for inflation rate being at or below 2.5\%): shift in distribution of risk
 
-**Collateral (Loan- and Time-Dependent)**
-- `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak-to-moderate positive association
-    - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
-
-*Controls*
+**Controls**
 - region, occupancy status, loan purpose, long-term loan indicator, and *baseline hazard control* using natural splines transformation of loan age with 2 degrees of freedom.
 
+## Performance Evaluation
 
+### ROC Curve (Test Set)
+![ROC Curve](figures/roc_curve.pdf)
+
+### KS Plot (Test Set)
+![KS Plot](figures/ks_plot.pdf)
+
+### Calibration (Train Set)
+![Calibration Plot](figures/cal_plot.pdf)
+
+## Results (Out-of-Time Test Set)
+- **AUC = 0.99** (very strong ranking performance)
+- **KS = 0.98** (large separation between default and non-default)
+
+## Thresholding tradeoff:
+- At *empirical event-rate threshold*:
+  - **Recall (Sensitivity) = 0.98**
+  - **Precision = 0.20**
+  - **F1 = 0.30**
+- Raising the threshold to around **0.001** (a little less than double the emprirical event-rate) can improve the balance:
+  - **F1 = 0.51** and a very small decrease in recall
+
+## Repo Notes
+- Report is written in R Markdown; heavy computations are done in separate code-only R scripts and saved as RDS objects and figures.
+- Key generated artifacts:
+  - `objects/*.rds` (model outputs, tables)
+  - `figures/*` (EDA + evaluation plots)
 
 
