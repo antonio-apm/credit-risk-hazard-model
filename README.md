@@ -10,8 +10,18 @@
     - Due to the panel structure of the data, we use cluster-robust standard errors (clustered on loan IDs) to account for within-loan dependence over time.
 - The model is state-dependent in the sense that one of the predictors is the current delinquency state (number of missed payments).
 - In order to have a sufficient number of "events" in the data, we define default as the event of a loan having 3+ missed payments.
-      - Moreover 
+      - Also note that we have censoring at data cutoff and prepayment is treated as censoring.
 - This is designed for applications to credit portfolio monitoring (flagging loans with rising risk), not "ever-default" origination pricing.
+
+## Data
+- **Freddie Mac Single-Family Loan-Level Dataset (SFLLD)**: vintages **2013, 2016, 2020**
+- Train/test split:
+  - **Train:** 2013/02 $-$ 2021/09  
+  - **Test:** 2021/10 $-$ 2025/05  
+- All loans are fixed-rate mortgages (FRMs) without prepayment penalties (non-PPM) in the sample.
+- Missing DTI handled with:
+  - `dti_missing` indicator
+  - median-imputed DTI used inside `transf_dti = |DTI − 15|`
 
 
 
