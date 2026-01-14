@@ -26,13 +26,6 @@
   - median-imputed DTI used inside `transf_dti = |DTI − 15|`
 
 ## Key Predictors (Greatest Signal)
-<div>
-    <img src="figures/cr_spread_1.png" width="350">
-    <img src="figures/credit_score_1.png" width="350"> 
-    <img src="figures/last_unrate_chg_pos_1.png" width="350">
-    <img src="figures/last_infl_yoy_low_1.png" width="350"> 
-    <img src="figures/inv_eltv_1.png" width="350">
-</div>
 
 **Behavioural (Loan- and Time-Dependent)**
 - `deliq_num` (missed-payments state): dominates short-horizon PD
@@ -40,17 +33,28 @@
 **Collateral (Loan- and Time-Dependent)**
 - `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak-to-moderate positive association
     - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
+<div>
+    <img src="figures/inv_eltv_1.png" width="350">
+</div>
 
 **Borrower Risk at Origination (Loan-Dependent)**
 - `cr_spread` (origination credit spread): strong positive association
     - Derived by deducting the yield on the 10-year Treasury at the time of origination from the interest rate on the loan at origination
 - `credit_score` (FICO): strong negative association  
 - `dti_missing` and `transf_dti`$=|\text{DTI}-15|$: capture underwriting/affordability effects
+<div>
+    <img src="figures/cr_spread_1.png" width="350">
+    <img src="figures/credit_score_1.png" width="350"> 
+</div>
 
 **Macroeconomic and Market-Based (Time-Dependent)**
 - `last_vix` (lagged CBOE Volatility Index): moderate-to-strong positive association
 - `last_unrate_chg_pos`$=\max(\Delta_{12}\text{UR},0)$ (positive part of the YoY change in the unemployment rate): strong positive association  
 - `last_infl_yoy_low` (indicaator for inflation rate being at or below 2.5\%): shift in distribution of risk
+<div>
+    <img src="figures/last_unrate_chg_pos_1.png" width="350">
+    <img src="figures/last_infl_yoy_low_1.png" width="350"> 
+</div>
 
 **Controls**
 - region, occupancy status, loan purpose, long-term loan indicator, and *baseline hazard control* using natural splines transformation of loan age with 2 degrees of freedom.
