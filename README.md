@@ -25,7 +25,8 @@
   - `dti_missing` indicator
   - median-imputed DTI used inside `transf_dti = |DTI − 15|`
 
-## Key Predictors (Greatest Signal)
+## Key Predictors
+Some of the key predictors used in the model are summarized below. The plots show scatterplots of the variables vs. the logit transform of the empirical hazard rate.
 
 **Behavioural (Loan- and Time-Dependent)**
 - `deliq_num` (missed-payments state): dominates short-horizon PD
