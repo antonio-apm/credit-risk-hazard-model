@@ -19,9 +19,37 @@
   - **Train:** 2013/02 $-$ 2021/09  
   - **Test:** 2021/10 $-$ 2025/05  
 - All loans are fixed-rate mortgages (FRMs) without prepayment penalties (non-PPM) in the sample.
+- **Total size:** ~ 18 GB
 - Missing DTI handled with:
   - `dti_missing` indicator
   - median-imputed DTI used inside `transf_dti = |DTI − 15|`
 
+## Model
+Discrete-time hazard / early-warning PD model:
+\[
+Y_{it} = \mathbb{1}[\text{default in month } t+1], \quad
+\text{logit}(\pi_{it}) = X_{it}^\top\beta^{(L)} + Z_t^\top\beta^{(M)}
+\]
+Where \(\pi_{it}\) is the **1-month-ahead PD** given survival up to month \(t\).
+
+## Key Predictors (high signal)
+**State / behavior**
+- `deliq_num` (missed-payments state): dominates short-horizon PD (orders-of-magnitude effect)
+
+**Pricing / borrower risk**
+- `cr_spread` (origination credit spread): strong positive association  
+- `credit_score` (FICO): strong negative association  
+- `dti_missing` and `transf_dti = |DTI − 15|`: capture underwriting/affordability effects
+
+**Macro / market regime (lagged)**
+- `last_vix` (volatility / uncertainty): higher VIX → higher default risk  
+- `last_unrate_chg_pos = max(Δ12 UR, 0)` (positive unemployment change): strong positive association  
+- `last_infl_yoy_low` (inflation ≤ 2.5% indicator): distributional shift in risk
+
+**Collateral**
+- `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): higher equity → lower risk
+
+Controls
+- region, occupancy, loan purpose, long-term indicator, and **baseline hazard control** via `ns(loan_age, df=2)`.
 
 
