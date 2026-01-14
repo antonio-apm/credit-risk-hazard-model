@@ -1,5 +1,6 @@
 # Credit Risk Analysis: Retail Mortgage Loans
-**State-Dependent Logistic Hazard Model for 1-Month-Ahead Default Prediction**\n
+## **State-Dependent Logistic Hazard Model for 1-Month-Ahead Default Prediction**
+
 *Antonio Melacini - December 2025*
 
 ## Overview
