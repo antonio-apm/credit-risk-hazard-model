@@ -28,7 +28,7 @@
 ## Key Predictors
 Some of the key predictors used in the model are summarized below. 
 
-The scatterplots of the covariates plotted against the logit transform of the empirical hazard rate on the y-axis.
+The scatterplots of the covariates plotted against the logit transform of the empirical hazard rate on the y-axis. For categorical predictors, they are visualized with grouped Kernel Density Estimates (KDEs) of the logit transform of the empirical hazard rate.
 
 **Loan Performance (Loan- and Time-Dependent)**
 - `deliq_num` (current number of missed payments): very strong positive association (e.g. a loan can only reach 3 missed payments once it missed 2 payments)
