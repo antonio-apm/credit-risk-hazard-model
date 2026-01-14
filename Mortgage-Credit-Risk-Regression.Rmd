@@ -247,14 +247,14 @@ knitr::include_graphics("figures/orig_rate.pdf")
 ```
 
 `last_unrate_chg_pos` has a strong positive linear association with logit hazard.
-$=\max(\nabla_{12}\text{UR},0)$ where $\text{UR}$ is the unemployment rate.
+`last_unrate_chg_pos`$=\max(\nabla_{12}\text{UR},0)$ where $\text{UR}$ is the unemployment rate time series.
 
 `last_rate_cut` has a moderate-to-strong association with logit hazard that is approximately linear.
-`last_rate_cut`$=\max(-\nabla_{12}\text{FF},0)$ where $\text{FF}$ is the fed funds rate.
+`last_rate_cut`$=\max(-\nabla_{12}\text{FF},0)$ where $\text{FF}$ is the fed funds rate time series.
 
-The distribution for the empirical logit hazard when `last_infl_yoy_low==1` (last month's YoY inflation was below 1.5\%) is shifted left with lower variance, and it is shifted right with higher variance when `last_infl_yoy_low==0`, which suggests a change in distribution, so we use this indicator in the model.
+The distribution for the empirical logit hazard when `last_infl_yoy_low==1` (last month's YoY inflation was below 2.5\%) is shifted left with lower variance, and it is shifted right with higher variance when `last_infl_yoy_low==0`, which suggests a change in distribution, so we use this indicator in the model.
 
-The kernel density estimates for the subset where `last_slope_incr==0` and `last_slope_incr==1` are centered at roughly the same logit hazard value so we do not use `last_slope_incr` as a predictor. For the same reason, we do not use `last_invert`.
+The kernel density estimates for the subset where `last_slope_incr==0` and `last_slope_incr==1` are centered at roughly the same logit hazard value so we do not use `last_slope_incr` as a predictor. For the same reason, we do not use `last_invert` (the indicator for last month's yield curve slope being negative).
 
 ```{r, include=FALSE}
 predictor_names <- c(predictor_names, "last_unrate_chg_pos", "last_rate_cut", 
@@ -497,7 +497,7 @@ The final variables we used (in the order of the output above) were:
 
 ## Interpetation
 
-We will now provide some examples of parameter interpretation for this model. Recall from the data background section that all of the mortgages in our final cleaned dataset were fixed-rate mortgages without prepayment penalties. Thus, when we refer to "any loan" we really mean any fixed-rate mortgage without prepayment penalties.
+We will now provide some examples of parameter interpretation for this model. Recall from the data background section that all of the mortgages in our final cleaned dataset were fixed-rate mortgages without prepayment penalties. Thus, from here on, when we talk about "loans" we specifically mean fixed-rate mortgage without prepayment penalties.
 
 For any fixed $k$, we have
 $$\begin{aligned}
@@ -516,7 +516,10 @@ Now we look at the predicted PD values as the number of missed payments increase
 
 ```{r, echo=FALSE} 
 prob_interp_df <- readRDS("objects/prob_interp_df.rds")
-kable(prob_interp_df)
+kable(prob_interp_df %>% 
+        mutate(
+          pd = format(pd, scientific=TRUE, digits=6)
+        ))
 ```
 
 The estimated 1-month ahead probability of default for this loan under these macro conditions increases several orders of magnitude as the number of currently missed payments increases. 
@@ -537,15 +540,17 @@ knitr::include_graphics("figures/se_growth.pdf")
 
 The SEs for most parameters grow by a fairly small amount (about 0\% to 15\%) and the SE for the estimated VTL ratio is inflated the most (about 45\%). The SEs for credit score, the DTI missing indicator, the spline terms for age of loan, and the occupancy status parameters also increase a decent amount (about 20\% to 30\%).
 
+It's not easily visible on the plot, but there are also a few SEs which decrease by a very small amount.
+
 Overall, there are no massive increases in standard errors, suggesting that the model was already modeling within-loan dependence decently well using the covariates. Now that we have more reliable standard errors for our parameters we can include confidence intervals in some of our interpretation, which we provide an example of below. 
 
 ```{r, include=FALSE}
 ci <- readRDS("objects/credit_score_rel_ci.rds")
-ci <- round(100*ci, 3)
+ci <- round(100*ci, 4)
 low <- ci[1] ; up <- ci[2]
 ```
 
-We estimate that a 10 point increase in credit score is associated with a `r round(100*(exp(train_coefs[['credit_score']])-1), 3)`\% relative growth in the odds of default next month with 99\% confidence interval (`r low`\%, `r up`\%) while adjusting for the selected macroeconomic variables and loan-specific variables.
+We estimate that a 10 point increase in credit score is associated with a `r round(100*(exp(10*train_coefs[['credit_score']])-1), 4)`\% relative growth in the odds of default next month with 99\% confidence interval (`r low`\%, `r up`\%) while adjusting for the selected macroeconomic variables and loan-specific variables.
 
 # Prediction Evaluation
 
