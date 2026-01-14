@@ -31,7 +31,7 @@ Some of the key predictors used in the model are summarized below.
 The scatterplots of the covariates plotted against the logit transform of the empirical hazard rate on the y-axis.
 
 **Loan Performance (Loan- and Time-Dependent)**
-- `deliq_num` (missed-payments state): dominates short-horizon PD
+- `deliq_num` (current number of missed payments): very strong positive association (e.g. a loan can only reach 3 missed payments once it missed 2 payments)
 - `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak positive association
     - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
 <p align="center">
