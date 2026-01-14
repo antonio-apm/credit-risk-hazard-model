@@ -51,19 +51,20 @@
 ## Performance Evaluation
 
 ### ROC Curve (Test Set)
-![ROC Curve](figures/roc_curve.png)
+![ROC Curve](figures/roc_curve_1.png)
 
 ### KS Plot (Test Set)
-![KS Plot](figures/ks_plot.png)
+![KS Plot](figures/ks_plot_1.png)
 
 ### Calibration (Train Set)
-![Calibration Plot](figures/cal_plot.png)
+![Calibration Plot](figures/cal_plot_1.png)
 
 ## Results (Out-of-Time Test Set)
 - **AUC = 0.99** (very strong ranking performance)
 - **KS = 0.98** (large separation between default and non-default)
 
 ## Thresholding tradeoff:
+![Metrics vs. Threshold](figures/threshold_metrics_zoom_1.png)
 - At *empirical event-rate threshold*:
   - **Recall (Sensitivity) = 0.98**
   - **Precision = 0.20**
