@@ -73,6 +73,7 @@
 <p align="center">
   <img src="figures/threshold_metrics_zoom_1.png" width="550">
 </p>
+
 - At *empirical event-rate threshold*:
   - **Recall (Sensitivity) = 0.98**
   - **Precision = 0.20**
