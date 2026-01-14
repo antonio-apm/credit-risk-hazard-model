@@ -1,0 +1,676 @@
+---
+title: "Credit Risk Analysis: Retail Mortgage Loans"
+subtitle: "State-Dependent Logistic Hazard Model for Short-Term Default Prediction"
+author: "Antonio Melacini"
+date: "December 2025"
+output: pdf_document
+fontsize: 11pt
+header-includes: 
+  - \usepackage{bbm}
+---
+
+
+<!--  Math symbols -->
+\newcommand*{\T}{^{\top}}
+\newcommand*{\ind}{\overset{\text{ind}}{\sim}}
+\newcommand*{\iid}{\overset{iid}{\sim}}
+\newcommand*{\deq}{\overset{d}{=}}
+\newcommand*{\dconv}{\overset{d}{\rightarrow}}
+\newcommand*{\pconv}{\overset{p}{\rightarrow}}
+\newcommand*{\quant}{^{\leftarrow}}
+\newcommand*{\indep}{\perp\!\!\!\perp}
+\newcommand*{\F}{\mathcal{F}}
+<!-- Sets (natural numbers etc) -->
+\newcommand*{\IN}{\mathbb{N}} 
+\newcommand*{\IZ}{\mathbb{Z}}
+\newcommand*{\IQ}{\mathbb{Q}}
+\newcommand*{\IR}{\mathbb{R}}
+\newcommand*{\IC}{\mathbb{C}}
+<!-- Distributions, processes -->
+\newcommand*{\se}{\operatorname{se}}
+\newcommand*{\Geo}{\operatorname{Geo}}
+\newcommand*{\Exp}{\operatorname{Exp}}
+\newcommand*{\Poi}{\operatorname{Poisson}}
+\newcommand*{\NVM}{\operatorname{NVM}}
+\newcommand*{\Par}{\operatorname{Pareto}}
+\newcommand*{\IG}{\operatorname{IG}}
+\newcommand*{\LN}{\operatorname{LN}}
+\newcommand*{\Cauchy}{\operatorname{Cauchy}}
+\newcommand*{\U}{\mathcal{U}} 
+\newcommand*{\B}{\operatorname{B}}
+\newcommand*{\Bin}{\operatorname{Binomial}}
+\newcommand*{\Ber}{\operatorname{Bernoulli}}
+\newcommand*{\Beta}{\operatorname{Beta}}
+\newcommand*{\NB}{\operatorname{NB}}
+\newcommand*{\N}{\operatorname{N}}
+<!-- Operators, functions -->
+\newcommand*{\sign}{\operatorname{sign}}
+\newcommand*{\I}{\mathbbm{1}} 
+\renewcommand*{\P}{\mathbb{P}}
+\newcommand*{\E}{\mathbb{E}}
+\newcommand{\dummy}[1]{\mathbbm{1}\{\texttt{#1}\}}
+\newcommand*{\med}{\operatorname{med}}
+\newcommand*{\Var}{\operatorname{Var}}
+\newcommand*{\Cov}{\operatorname{Cov}}
+\newcommand*{\Corr}{\operatorname{Corr}}
+\newcommand*{\diag}{\operatorname{diag}}
+\newcommand*{\logit}{\operatorname{logit}}
+\newcommand*{\Odds}{\operatorname{Odds}}
+\newcommand*{\OR}{\operatorname{OR}}
+\newcommand*{\RR}{\operatorname{RR}}
+<!-- Estimators  -->
+\newcommand*{\hmu}{\hat{\mu}}
+\newcommand*{\hsigma}{\hat{\sigma}}
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Overview
+
+We create a 1-month-ahead probability of default (PD) model using logistic regression with panel data comprised of loan origination characteristics, monthly loan performance variables and macroeconomic variables. That is, using month-level data, we use information available at time $t$ (including information from origination) to predict default at time $t+1$. One of the covariates we used is the rolling count of delinquencies (missed payments) up to the current time, which is effectively what makes the regression a state-dependent model\footnote{In fact, the model could be extended by fitting the same regression to other definitions of default using the other states (1 missed payment, 2 missed payments), which would make that collection of models able to represent a 3-state time- and loan-dependent Markov transition matrix.}. Due to the inclusion of these covariates, the model is best interpreted as an early-warning PD model useful for credit portfolio monitoring (e.g. detect loans at high risk of default) and account management (e.g. offer deals to stable borrowers)\footnote{This is not a model for the probability that a loan ever defaults using using origination data only, which would be a tool more useful for loan pricing than ongoing portfolio management.}.
+
+We face natural right-censoring at the data cutoff date (the event status in month $T+1$ is unobserved for the final observed month $T$). In addition, to enforce an absorbing default state under our simplified default definition (3+ missed payments), we truncate each loan's panel after it's first default month. Due to this, we implicitly condition on the loan surviving up to the current time, so we can also view the regression as a hazard rate model. 
+
+We form a sample by combining data from 2013, 2016 and 2020 vintages sourced from the Freddie Mac Single Family Loan-Level Dataset (SFLLD). These origination years are chosen to provide a sample of loans originating in a variety of macroeconomic environments and to help identify the possible effects of loan age\footnote{Loan age is the natural measure of "time" for a specific loan.} separately from calendar time.
+
+We do a first pass of variable selection by including economically justified covariates and visually inspecting the empirical relationships between our covariates and the logistic transform of the hazard. Next, we check if we can drop any unnecessary covariates using Lasso (L1 regularization). After variable selection, we use a time-based 70/30 split to train the model on the training set and evaluate the performance on the held-out test set. The training set corresponds to months from 2013/02 to 2021/09, and the test set corresponds to months from 2021/10 to 2025/05.
+
+# Model Definition
+
+We define the event of default as $90+$ days past due ($3+$ missed monthly payments). Some borrowers never make another monthly payment after "default", although there are also some\footnote{Approximately $10\%$ of loans in our data have this property.} borrowers that subsequently cure (return to $<90$ days past due) after "defaulting" and then possibly "default" again. We wish to define default as an absorbing state, meaning that a lender remains in default once they default. To enforce this, for each loan we drop the rows for months following the month of default. This simplified definition allows us to have more cases of "default" than if we only included actual defaults which never cured.
+
+Also note that we treat prepayment as a right-censoring event. Specifically, once a loan prepays, it permanently exists the risk set for default, and we accordingly drop the observation corresponding to the prepayment month as well as all subsequent months for that loan. This is the approach of modeling cause-specific default hazard, treating prepayment as an independent\footnote{When we say independence here, we mean that we assume prepayment and default are conditionally independent given the covariates in the model.} censoring mechanism rather than explicitly modeling competing risks.
+
+We will fit the following logistic regression model (Binomial GLM with canonical link):
+$$
+\begin{aligned}
+(Y_{it}\Big|\F_{it})&\sim\Ber(\pi_{it})~~~\text{independently} \\
+\logit(\pi_{it}) &= X_{it}^T\beta^{(L)} +Z_t^T\beta^{(M)}
+\end{aligned}
+$$
+where:
+\begin{itemize}
+  \item $\logit(\pi)=\ln\Big(\pi/(1-\pi) \Big)$ is the logistic ("log odds") function, 
+  \item $Y_{it}=\I[\text{loan }i\text{ defaults in month }t+1]$, 
+  \item $\F_{it}=\sigma\Big((X_{is},Z_s)_{s\leq t}\Big)$ is the sigma-field generated by the covariates for loan $i$ up to time $t$ (which can be thought of as the available information pertaining to loan $i$ up to time $t$), 
+  \item $\pi_{it}=\P(Y_{it}=1|\F_{it})=\text{PD}_{it}^\text{1mo}$ is the probability of default in month $t+1$ (given survival up to time $t$ and the information for loan $i$ up to time $t$),
+  \item $X_{it}$ is a vector of covariates for loan $i$ at month $t$, 
+  \item $\beta^{(L)}$ is the parameter vector for the loan-specific associations, 
+  \item $Z_t$ is a vector of exogenous macroeconomic covariates at month $t$ (appropriately lagged so that they are observed before $t$), and
+  \item $\beta^{(M)}$ is the parameter vector for the macroeconomic associations.
+\end{itemize}
+
+## Hazard Model View
+This can also be viewed as a discrete hazard model:
+
+Let $T_i\in\{0,1,2,\dots\}$ be the survival time (time of default; first time loan is 90+ days past due) for loan $i$.
+The covariate-dependent hazard (instantaneous risk) function for loan $i$ at month $t+1$ is
+$$\begin{aligned}
+h_i(t+1|\F_{it})&=\P(T_i=t+1|T_i\geq t +1, \F_{it}) \\
+&= \P(\text{default in month }t+1|\text{no default as of month }t, \F_{it}) \\
+&= \P(Y_{it}=1|\F_{it}) \\
+&= \pi_{it}
+\end{aligned}$$
+
+This interpretation is valid because we removed rows for loans in the months after they defaulted\footnote{Since "default" was defined as 90+ DPD, this means we removed observations in months $t+1,t+2,\dots$ after $Y_{it}=1$ even if there may be some loans which ended up returning to a non-default state.} and we dropped the final month of censored observations\footnote{At the final month in our dataset, whether or not a loan defaults next month is unknown.}, so each loan-month observation represents a period during which the loan is actually at risk of default.
+
+## Independence and Inference
+We use the standard GLM likelihood (assuming full indepndence) as a working model for the mean response (one-month ahead default probability). Cross-loan independence is a plausible assumption after conditioning on macro covariates, although residual within-loan dependence may remain due to unobserved borrower and servicing effects. Under correct specification of the conditional mean $\E(Y_{it}|\F_{it})=\pi_{it}$, the MLE remains a good estimator, so point estimation and prediction are okay. However, naive standard errors can be biased under un-modeled within-loan dependence, so for confidence intervals we use loan-clustered robust standard errors (CRSEs). 
+
+
+```{r, include=FALSE}
+# Load libraries
+library(tidyverse) # SQL-like data manipulation and more (e.g. dplyr)
+library(ggplot2) # highly customizable visualizations
+library(fredr) # FRED API
+library(corrplot) # correlation matrix heat maps
+library(performance) # VIF calculations and visualizations
+library(knitr) # polished display of tables
+library(glmnet) # regularized GLMs (CURRENTLY NOT USED)
+library(survival) # Kaplan-Meier estimator
+library(splines) # natural splines
+library(reshape2) # data.frame <-> matrix conversions
+library(sandwich) # cluster-robust covariance matrix estimator
+library(yardstick) # ROC plot and AUC calculation
+
+```
+
+# Data Background
+
+## Loan Data
+
+We are concerned with modeling the event of default in the *next* month using information available in the *current* month. 
+
+The official document with the full data dictionary and user guide for SFLLD can be found at [user guide](https://www.freddiemac.com/fmac-resources/research/pdf/user_guide.pdf). 
+
+There exist variables which may be useful that we did not use, such as "Estimated LTV" in the monthly performance data which relies on Freddie Mac's proprietary Automated Valuation Model. These variables are omitted so that all variables in the final model are those which are readily available at a typical bank or credit union. 
+
+We drop loans with NA values for LTV at origination since it is an extremely small portion of our sample and none of those loans end up defaulting.
+
+For loans with NA values for DTI at origination (`orig_dti`), there are actually a material amount which end up defaulting, so we can't simply drop these loans. We create an indicator variable called `dti_missing` for `orig_dti` having an NA value, and we create a new variable `orig_dti_imp` which is equal to `orig_dti` when it is not missing and otherwise it is imputed with the median. This way, we can use both `dti_missing` and `orig_dti_imp` as variables in our model.
+
+Lastly, note that all loans in the data happen to be *fixed* rate mortgages (FRMs) and *not* be prepayment penalty mortgages (PPMs). For this reason, we cannot include the indicators for either of these factors in our model, and it also means that our model is implicitly conditioning on the loan being an FRM and a non-PPM.
+
+## Macroeconomic Data
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics(
+  normalizePath("figures/macro_ts.pdf", winslash = "/", mustWork = TRUE)
+  )
+```
+
+```{r, echo=FALSE, out.width="50%"}
+knitr::include_graphics(c("figures/vix_ts.pdf", "figures/infl_ts.pdf"))
+```
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/macro_corr.pdf")
+```
+
+Macroeconomic variables are included in the model as exogenous time-varying covariates, which allows the model to condition on observed (lagged) macroeconomic variables and hence help the model learn the overall economic environment that lenders face at a given point in time. 
+
+It is necessary to lag the macroeconomic features by (at least) one month because the data for month $t-1$ is typically only released during month $t$.
+
+
+# EDA, Variable Selection and Feature Engineering
+
+## Univariate Survival Analysis 
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/km_cpd_plot.pdf")
+```
+
+The estimated cumulative PD (eCPD) curve shows spikes at around 40-50 months and 75-90 months, which is suspected to be the effects of macroeconomic shocks from those periods of time (i.e. COVID). For the 2016 origintion sample, a loan age of 40-50 months roughly corresponds to the time period of 2020 Q2 on average, and similarly for the 2013 origination sample, a loan age of 75-90 months roughly corresponds to the time period of 2020 Q2 on average. If we look more closely at the very start of the eCPD curve for small loan ages, we see that it is very subtly increasing at a faster pace than the prolonged steady rates of growth we see for later months, which aligns with the fact that the 2020 origination sample was in the calendar time period of 2020 Q1-Q2 for these loan ages. 
+
+The goal is to use macroeconomic covariates such as the unemployment rate and the house price index in our PD model so that we can try to capture the effects of macro shocks on PD and so that we can identify the possible effect of other variables like loan age without the issue of confounding. 
+
+## Identifying Possible Age of Loan Effects
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics(c("figures/age_haz.pdf", "figures/age_haz_year.pdf"))
+```
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/age_haz_time.pdf")
+```
+
+From the heat map above there does not seem to be any association between hazard and loan age. However, we do see clear spikes in hazard across loans of *all ages* during the time period of 2020 Q2. In the year-faceted scatterplot, we observe 3 clusters (one for each origination) for most years, and it is difficult to identify any relationship with loan age within each year.
+
+Thus, it seems that macroeconomic conditions play a much more important role in the event of default than age of loan does. However, loan age may still be a useful control in our model since we are using many time-dependent macro covariates. Thus, we will fit models both with and without the age of loan variable and compare them.
+
+## Selecting and Transforming Macroeconmic Features
+
+```{r, echo=FALSE, out.width="50%"}
+macro_vars <- readRDS("objects/macro_vars.rds")
+all_paths <- c(
+  paste0("figures/", macro_vars, ".pdf"),
+  "figures/orig_rate.pdf"
+)
+knitr::include_graphics(all_paths)
+knitr::include_graphics("figures/orig_rate.pdf")
+```
+
+We will use VIX (`last_vix`) as a linear predictor. There is only one point which is a very clear outlier from the overall linear association, which is what makes the LOESS curve appear nonlinear. 
+
+Based on the patterns observed in the plots above and the economic context, we make transformations to many of the other variables in an effort to see if we can get better candidates for linear predictors while mainlining interpretability. 
+
+Before moving on to the transformations, we note that there are some variables which we can disqualify right away based on the plots. 
+
+The raw level of HPI (`last_hpi`) and CPI (`last_cpi`) have near perfect positive correlation, and they are both strongly correlated with time, so we suspect that the patterns we observe in the plot are confounded by events in the time periods corresponding to those index levels (i.e. COVID). Hence, we do not use these variables. 
+
+The home inflation (`last_hpi_yoy`), overall inflation (`last_infl_yoy`), and raw level of the federal funds rate (`last_fedfunds`) all show no association with logit hazard, so we do not use them.
+
+We will use the 10-year treasury rate (`last_t10rate`) and the loan rate at origination to create a new variable that should offer both better interpretation and predictive power.
+
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/cr_spread.pdf")
+```
+
+The credit spread shows very clear linear association with the empirical logit hazard.
+
+```{r, include=FALSE}
+predictor_names <- c("loan_age", "last_vix", "cr_spread")
+```
+
+```{r, echo=FALSE, out.width="50%"}
+new_vars <- c("last_unrate_chg_pos", "last_rate_cut", "last_slope_mag", 
+              "last_slope_incr", "last_infl_yoy_low", "last_invert")
+all_paths <- c(
+  paste0("figures/", new_vars, ".pdf"),
+  "figures/orig_rate.pdf"
+)
+knitr::include_graphics(all_paths)
+knitr::include_graphics("figures/orig_rate.pdf")
+```
+
+`last_unrate_chg_pos` has a strong positive linear association with logit hazard.
+$=\max(\nabla_{12}\text{UR},0)$ where $\text{UR}$ is the unemployment rate.
+
+`last_rate_cut` has a moderate-to-strong association with logit hazard that is approximately linear.
+`last_rate_cut`$=\max(-\nabla_{12}\text{FF},0)$ where $\text{FF}$ is the fed funds rate.
+
+The distribution for the empirical logit hazard when `last_infl_yoy_low==1` (last month's YoY inflation was below 1.5\%) is shifted left with lower variance, and it is shifted right with higher variance when `last_infl_yoy_low==0`, which suggests a change in distribution, so we use this indicator in the model.
+
+The kernel density estimates for the subset where `last_slope_incr==0` and `last_slope_incr==1` are centered at roughly the same logit hazard value so we do not use `last_slope_incr` as a predictor. For the same reason, we do not use `last_invert`.
+
+```{r, include=FALSE}
+predictor_names <- c(predictor_names, "last_unrate_chg_pos", "last_rate_cut", 
+                     "last_infl_yoy_low")
+```
+
+## Looking at Approximate LTV
+
+```{r, echo=FALSE, out.width="50%"}
+knitr::include_graphics("figures/hpao.pdf")
+knitr::include_graphics("figures/eltv.pdf")
+knitr::include_graphics("figures/log_eltv.pdf")
+knitr::include_graphics("figures/inv_eltv.pdf")
+```
+
+We define the time-varying "Approximate Home Price Appreciation since Origination" (HPAO) variable as 
+$$
+\text{HPAO}_i(t)=\text{HPI}(t)\Big/\text{HPI}(t_0^{(i)})
+$$
+where $\text{HPI}_t$ is the Home Price Index at time $t$ and $t=t_0^{(i)}$ corresponds to the time of origination for loan $i$. We mentioned earlier that the LTV (Loan-To-Value) ratio for a given loan $i$ at time $t>t_0^{(i)}$ is estimated by Freddie Mac using their Automated Valuation Model, which is because the value of the home for loan $i$ is typically unknown at an arbitrary time after origination. Using the $\text{HPAO}_i(t)$ variable defined above, we estimate $\text{LTV}_i(t)$ as follows.
+
+Let $L_i$ be the original loan amount for loan $i$ and let $V_i(t)$ be the value\footnote{When we say "value" here, we really just mean the market price, not necessarily the intrinsic value or fair value in a traditional valuation sense.}
+
+$$
+\text{LTV}_i(t) = \frac{\text{L}_i}{V_i(t)} = \frac{\text{L}_i}{V_i(t)\cdot V_i(t_0^{(i)})\big/V_i(t_0^{(i)})}
+= \frac{\text{L}_i}{V_i(t_0^{(i)})} \cdot \frac{1}{V_i(t) \big/ V_i(t_0^{(i)})} 
+\approx \text{LTV}_i(t_0^{(i)}) \Big/ \text{HPAO}_i(t)
+$$
+
+We use the assumption that the growth in the value of home $i$ is approximately the same as the growth in HPI. 
+
+Now we inspect the possible use of the 1-month lagged versions of $\text{HPAO}_i(t)$ and/or $\text{LTV}_i(t_0^{(i)}) \Big/ \text{HPAO}_i(t)$ as covariates in the model. 
+
+```{r, include=FALSE}
+predictor_names <- c(predictor_names, "last_vtl_est")
+```
+
+The raw estimated LTV covariate shows a weak nonlinear relationship with logit hazard, and the log transform of the covariate shows a stronger but still somewhat nonlinear relationship with logit haazard. The inverse transform (which is effectively the estimated Value-To-Loan ratio) shows a moderate-strong linear relationship, so this is what we use in the model.
+
+The Value-To-Loan ratio can be viewed as a dimensionless version of the equity of the home:
+
+Let $E$ be the equity of the home, $V$ be the value of the home and $L$ be the loan amount, all at some fixed time. Now we have the following sequence of bijections: 
+$E=V-L ~\mapsto~ \frac{V-L}{L}=V/L-1 ~\mapsto ~V/L$
+
+This makes sense economically and aligns with the structural (option-theoretic) view of mortgages, wherein the mortgage is essentially viewed as put option on the home with the strike being the loan amount.
+\begin{itemize} 
+  \item (Negative Equity Case) $V<L\implies$ default (exercising the put) is economically rational.
+  \item (Positive Equity Case) $V> L\implies$ the put is out of the money and default (exercise) probability is small.
+\end{itemize}
+
+## Analyze Rest of Design Matrix
+
+Let's look at the original loan amount as a potential predictor.
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/orig_upb.pdf") 
+```
+
+The two kernel density estimates are nearly identical so it is clear that there does not seem to be any predictive power in the loan amount variable. 
+
+We now look at sample summaries of the outcome across different levels of our categorical predictors to ensure that the event counts are sufficiently balanced across all levels. 
+
+```{r, echo=FALSE}
+catsum_df <- readRDS("objects/catsum_df.rds")
+kable(catsum_df)
+```
+
+For `deliq_num` (the number of monthly payments missed), we see that the estimated PD (`mu`) becomes orders of magnitude higher as the level increases (strong association), so we include it in the model. In fact, the inclusion of this covariate is what effectively makes our model an incomplete Markov transition model, in the sense that it would be complete if we also had models for the 1-month ahead probability of `deliq_num=2` and `deliq_num=1` (which is attainable, just out of scope for this project). Note that we could also remove this covariate to make our model more of a structural economic model rather than a state-dependent model.  
+
+We still have class imbalance, as expected. 
+
+For each of the other categorical variables, the estimated PD is the same order of magnitude ($10^{-4}$) across all levels. 
+
+For `loan_purpose`, we see that the estimated PD is descending in the order `(P,C,N)`, where P corresponds to purchase borrowers, C corresponds to cash-out refinance (ReFi) borrowers, and N corresponds to no-cash-out ReFi borrowers\footnote{Details on what these terms mean can be found on \url{https://www.freddiemac.com/fmac-resources/research/pdf/user_guide.pdf} under the "Origination Data File" table in column position 21.}. The relative growth values in estimated PD as we move across these levels is large, so we include `loan_purpose` in the model.
+
+For `occupancy_status`, we see that loans for secondary homes (`S`) have the lowest est. PD, loans for primary residences (`P`) have an est. PD that is relatively higher, and investment properties (`I`) have the highest est. PD although it is only a little higher than that of `P`. The effect of occupancy status seems weak overall, so we may include it as a weak but interpretable control although it does not seem to be a major risk factor.
+
+For `region`, we observe differences in est. PD across the levels on the same relative scale as seen in the `occupancy_status` factor, so it does not seem to be a major risk factor although once again it may be useful to include in the model as a control, especially since the effects of economic shocks can vary with respect to regional geopolitical status. 
+
+```{r, include=FALSE}
+predictor_names <- c(predictor_names, "deliq_num", "loan_purpose", 
+                     "occupancy_status", "region")
+```
+
+```{r, echo=FALSE, out.width="33%"}
+knitr::include_graphics("figures/loan_term1.pdf")
+knitr::include_graphics("figures/loan_term2.pdf")
+knitr::include_graphics("figures/loan_term3.pdf")
+```
+
+We include the indicator for term of the loan being at least 25 years (`long_term`) as a predictor due to the apparent distribution shift seen above.
+
+```{r, include=FALSE}
+predictor_names <- c(predictor_names, "long_term")
+```
+
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/credit_score.pdf")
+```
+
+```{r, include=FALSE}
+predictor_names <- c(predictor_names, "credit_score")
+```
+
+Credit score shows a strong negative linear association with logit hazard. From the context of our data, we know that FICO scores are typically used when determining the interest rate (at origination), and the interest rate is a function of credit spread and the 10-year treasury rate. Thus, it may seem redundant to include both the credit spread and FICO score at origination and the credit spread at origination, however the correlation is actually quite low in our sample, which we suspect is reflecting the fact that much more than *just* the credit score goes into loan pricing (determining the interest rate to charge). So we include both in the model. We will check VIF scores later to do a final check of multicollinearity. 
+
+```{r, echo=FALSE, out.width="50%"}
+knitr::include_graphics("figures/dti1.pdf")
+knitr::include_graphics("figures/dti2.pdf")
+knitr::include_graphics("figures/dti3.pdf")
+knitr::include_graphics("figures/dti4.pdf")
+```
+
+```{r, echo=FALSE}
+dti_sum <- readRDS("objects/dti_sum.rds")
+kable(dti_sum)
+```
+We include `dti_missing` in the model due to the apparent shift in distribution that we observe across the groups. 
+
+```{r, include=FALSE}
+predictor_names <- c(predictor_names, "dti_missing")
+```
+
+The imputed DTI at origination variable clearly has a non-monotone relationship with logit hazard, although `transf_dti`$=|\text{DTI}-15|$ has a strong linear relationship except possibly at the right tail where we see some deviation from that pattern.
+
+We will now train some models on a subset of the data. We select the subset by including all loans with defaults observed and selecting a larger-sized random subset of the other loans (those that did not default). This is done for computational cost savings. 
+
+Note: a more thorough approach would be to use cross-validation (CV) on each of the fitted models so that we can use the estimated out-of-sample errors for each model as a basis of comparison. Due to the very large size and panel structure of the data, we would need to manually implement a very efficient CV program that properly handles panel data, so we leave this as an upgrade to complete in a later version of this project. The R packages `data.table` or `Polars`\footnote{Polars is available in both Python and R.} would be useful here, as they would make dataframe computations much faster and more memory efficient than `tibble`, `data.frame`, or pandas `DataFrame` objects in Python.
+
+```{r, echo=FALSE}
+aic_df <- readRDS("objects/aic_df.rds")
+quad_coef <- readRDS("objects/quad_coef.rds")
+kable(aic_df)
+cat("Squared Term Est. Coefficient:", quad_coef)
+```
+
+Even though it may seem like the empirical logit hazard is quadratic in `transf_dti`, due to the plot and the fitted coefficient for the squared term being negative, it seems that any fitted quadratic would be concave and hence would approach $-\infty$ as `transf_dti`$\rightarrow \infty$, meaning that the model would return hazard values near $0$ for extremely high DTI values\footnote{Since $\hat{\beta}_2<0$, the quadratic dominates for large $z=|\text{DTI}-15|$, so $\hat{\beta}_0+\hat{\beta}_1z+\hat{\beta}_2z^2\rightarrow-\infty$ as $z\rightarrow\infty$.}. This behaviour of asymptotically decreasing hazard at very high values of DTI would not be economically plausible. 
+
+It would make more sense that the steep growth in logit hazard flattens out or grows at a much slower pace past a threshold such as, say, `transf_dti`$=30$ based on the plot. The linear functional form for `transf_dti` does not capture such a pattern, and instead the linear term would make the hazard approach 1 as DTI grows indefinitely, although such behaviour would still make more sense economically. 
+
+As seen in the plot, there is only mild flattening behaviour observed and we have relatively much less data in that tail, so we use with the linear form.
+
+Moreover, DTI values greater than $30$\footnote{\texttt{transf\_dti}$>30\iff\text{DTI}>45$} are near the typical maximum tolerance for mortgages to be underwritten, and in fact Freddie Mac often caps the tolerated DTI at 45 or 50, which means that our observations for DTI values above 45 must be special cases which somehow qualified for the loan based on other more attractive criteria. This would explain why we observe the empirical logit hazard flattening out for DTI values in that range. This is just one sampling bias from the Freddie Mac dataset, and there are likely many more biases. An effort to remove all sampling bias is out of scope for this project, although we would like to remove some of the bias if possible.
+
+Thus, for practical reasons, we use the linear functional form for `transf_dti` even though the quadratic form achieves better AIC. 
+
+```{r, include=FALSE}
+predictor_names <- c(predictor_names, "transf_dti")
+```
+
+We do not include the LTV ratio at origination since we are already using the approximate dynamic LTV as derived and analysed earlier. 
+
+## Dealing with Multicollinearity
+
+We will fit the model on a subset of the data (same as used for AIC-based model comparison done earlier). We use this model for VIF calculations and to compare effect sizes for those predictors that are highly correlated (the rest of the model summary output below can be ignored).
+
+```{r, echo=FALSE}
+cat(readLines("objects/vif_sum.txt"), sep = "\n")
+```
+
+The only severe multicollinearity is between `last_unrate_chg_pos` and `last_rate_cut`, which makes sense since the Fed tends to cut rates when unemployment is high. The estimated coefficients are positive for both variables, as expected. From the fitted model above, we see that the effect size of `last_unrate_chg_pos` is around 0.1 after adjusting for the roughly 0.2-sized effect of `last_rate_cut`. This tells us that `last_unrate_chg_pos` has a stronger association with hazard, which makes sense since the Fed's policy rate changes are mostly reactionary whereas the unemployment rate is more of a direct cause. Given the larger effect size and smaller standard error, we use `last_unrate_chg_pos` instead of `last_rate_cut`.
+
+```{r, include=FALSE}
+predictor_names <- predictor_names[predictor_names != "last_rate_cut"]
+```
+
+Now we will compare the model with and without age of loan, which is correlated with all of the strongly trending macro variables.
+
+```{r, echo=FALSE}
+aic_df3 <- readRDS("objects/aic_df3.rds")
+kable(aic_df3)
+```
+
+We keep the loan age variable in the model since dropping it (`sample_fit3`) results in about a 10 point increase in AIC.
+
+```{r, echo=FALSE}
+aic_df46 <- readRDS("objects/aic_df46.rds")
+kable(aic_df46)
+```
+
+We get a decently sized drop (a difference of about 83) in AIC relative to the linear form by using natural splines with df=2 (`sample_fit4`), although the subsequent drops in AIC from increasing the df are very small and primarily reflect the model's ability to absorb residual origination and calendar-time variation rather than a stable age-specific pattern. Given the role of loan age as a control for the baseline hazard rather than a structural driver of risk, we use the low-dimensional spline form with df=2. This argument is reinforced by the plots from the [Identifying Possible Age of Loan Effects](#identifying-possible-age-of-loan-effects) section.
+
+```{r, include=FALSE}
+predictor_names <- predictor_names[predictor_names != "loan_age"]
+predictor_names <- c(predictor_names, "ns(loan_age, df=2)")
+```
+
+# Interactions
+
+Certain interaction terms are effectively already encoded as transformed variables (e.g. `last_vtl_est` is a function of the product $\text{LTV}\times\text{HPAO}$). We will try a few economically motivated interaction terms and see if they sufficiently improve AIC on our sub-sample of data.
+
+We consider the interaction between loan purpose and occupancy status. 
+
+```{r, echo=FALSE}
+aic_df8 <- readRDS("objects/aic_df8.rds")
+kable(aic_df8)
+```
+
+Based on the small drop in AIC (a difference of about 5), we do not include this interaction term. 
+
+Now we try a VIX x credit spread interaction term.
+
+```{r, echo=FALSE}
+aic_df9 <- readRDS("objects/aic_df9.rds")
+kable(aic_df9)
+```
+
+Again, we see only a very small improvement in AIC with the interaction term, so we do not use it.
+
+
+# Train and Interpret Final Model
+
+## Training
+
+```{r, echo=FALSE}
+train_sum <- readRDS("objects/train_sum.rds")
+train_coefs <- readRDS("objects/train_coefs.rds")
+print(train_sum)
+```
+
+The final variables we used (in the order of the output above) were: 
+\begin{itemize}
+  \item the lagged VIX level, 
+  \item the credit spread of the loan at origination (in percentage points), 
+  \item the positive part of the lagged change in the unemployment rate (in percentage points), 
+  \item the indicator for the lagged YoY inflation rate (in percentage points) being "low" (at or below 2.5\%), 
+  \item the lagged estimate for the value to loan ratio, 
+  \item the current delinquency state (number of missed payments), 
+  \item the purpose of the mortgage loan (e.g. purchase or investment), 
+  \item the occupancy status of the property (e.g. primary or secondary residence), 
+  \item the region of the property (e.g. North or South), 
+  \item the indicator for the term of the loan being "long" (at least 25 years), 
+  \item the FICO credit score of the borrower, 
+  \item the indicator for the DTI of the borrower not being available, 
+  \item the absolute distance of the borrower's DTI from a level of 15 (with median-imputed DTI), and
+  \item the age of the loan (in months).
+\end{itemize}
+
+
+## Interpetation
+
+We will now provide some examples of parameter interpretation for this model. Recall from the data background section that all of the mortgages in our final cleaned dataset were fixed-rate mortgages without prepayment penalties. Thus, when we refer to "any loan" we really mean any fixed-rate mortgage without prepayment penalties.
+
+For any fixed $k$, we have
+$$\begin{aligned}
+\beta_j &= \logit\pi_{it}|_{x_{itj}=k+1}-\logit|_{x_{itj}=k} \\
+&= \ln\Bigg(\frac{\pi_{it}/(1-\pi_{it})|_{x_{itj}=k+1}}{\pi_{it}/(1-\pi_{it})|_{x_{itj}=k}} \Bigg)
+\end{aligned}$$
+where $j$ is the index for a continuous predictor $x_{itj}$ and $\beta_j$ is the corresponding component of the loan-level $\beta^{(L)}$ or macro-level $\beta^{(M)}$ parameter vector.
+
+Our model based estimate for the odds ratio (OR) of the event of default next month for one additional percentage of credit spread vs. some fixed credit spread is `r round(exp(train_coefs[['cr_spread']]), 3)` while adjusting for the selected macroeconomic variables and loan-specific variables.
+
+This can be rephrased; we estimate that a $1\%$ increase in credit spread is associated with a `r round(100*(exp(train_coefs[['cr_spread']])-1), 1)`\% relative growth in the odds of default next month while adjusting for the selected macroeconomic variables and loan-specific variables.
+
+We estimate that the OR of default next month for a loan that has currently missed one payment vs. one that has not missed any payments is `r round(exp(train_coefs[['deliq_num1']]), 3)` adjusted for the selected macroeconomic variables and loan-specific variables.
+
+Now we look at the predicted PD values as the number of missed payments increases while holding the other predictor values constant as some manually chosen values; we select somewhat average values for the loan-level covariates (purchased property, primary residence, modest credit score of 750, etc.) although we choose a decently elevated VIX value of 17 and a high credit spread of 3\%.
+
+```{r, echo=FALSE} 
+prob_interp_df <- readRDS("objects/prob_interp_df.rds")
+kable(prob_interp_df)
+```
+
+The estimated 1-month ahead probability of default for this loan under these macro conditions increases several orders of magnitude as the number of currently missed payments increases. 
+
+Since we used splines for the loan age predictor it is less easily interpretable, so we create a partial dependence plot of the loan age variable on the predicted PD so that we can visualize how age is being used in the model. 
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/age_pred.pdf")
+```
+
+As mentioned in the overview, we will use the cluster-robust covariance estimator for standard errors, which is why we haven't been using the regular standard errors from the model summary. 
+
+The heat map below shows the relative growth in the standard errors (SEs) going from the regular SEs (via MLE; inverse information) to the cluster-robust SEs (via sandwich estimator).
+
+```{r, echo=FALSE, out.width="75%"}
+knitr::include_graphics("figures/se_growth.pdf")
+```
+
+The SEs for most parameters grow by a fairly small amount (about 0\% to 15\%) and the SE for the estimated VTL ratio is inflated the most (about 45\%). The SEs for credit score, the DTI missing indicator, the spline terms for age of loan, and the occupancy status parameters also increase a decent amount (about 20\% to 30\%).
+
+Overall, there are no massive increases in standard errors, suggesting that the model was already modeling within-loan dependence decently well using the covariates. Now that we have more reliable standard errors for our parameters we can include confidence intervals in some of our interpretation, which we provide an example of below. 
+
+```{r, include=FALSE}
+ci <- readRDS("objects/credit_score_rel_ci.rds")
+ci <- round(100*ci, 3)
+low <- ci[1] ; up <- ci[2]
+```
+
+We estimate that a 10 point increase in credit score is associated with a `r round(100*(exp(train_coefs[['credit_score']])-1), 3)`\% relative growth in the odds of default next month with 99\% confidence interval (`r low`\%, `r up`\%) while adjusting for the selected macroeconomic variables and loan-specific variables.
+
+# Prediction Evaluation
+
+We now test the model selected from earlier on the "out-of-time" (test set) data.
+
+We do not report accuracy since our event is rare so this can be very high even if we predict all events wrong.
+
+```{r, echo=FALSE, out.width="50%"}
+knitr::include_graphics("figures/roc_curve.pdf") 
+knitr::include_graphics("figures/ks_plot.pdf")
+```
+
+The ROC curve is highly bowed to the top-left corner and we have a very high AUC of about 99\%, which indicates that the classifier performs very well on the test data. 
+
+The Kolmogorov-Smirnoff plot shows very large maximum separation (KS statistic) of about 98\%, suggesting that the model separates the classes well. 
+
+Since our outcome is a rare event, we specifically look at the evaluation metrics when we use the empirical event rate from the training data as the threshold.
+
+```{r, echo=FALSE, results='asis'}
+conf_mat <- readRDS("objects/conf_mat.rds")
+metrics <- readRDS("objects/metrics.rds")
+cat("\\noindent\\textbf{Confusion Matrix (Rows = Predicted, Columns = Actual)}\n\n")
+kable(as.data.frame(conf_mat), row.names=TRUE, booktabs = TRUE)
+cat("\\noindent\\textbf{Other Classification Metrics}\n\n")
+kable(metrics)
+```
+
+For the empirical event-rate threshold: 
+\begin{itemize}
+  \item The sensitivity (recall) value tells us that the model correctly classifies about 98\% of actual defaults. Given that we are predicting rare events, this is one of the metrics we're most interested in, because failing to predict a default when it actually happens is likely much more costly than predicting one when it doesn't happen. That is, we care more about the true positive rate than the false positive rate. 
+  \item The precision value tells us that only about 20\% of predicted defaults actually end up defaulting. As we just mentioned, precision is relatively less important for our application, although this is a very low value.
+  \item The F1 score of about 0.3 reflects what we saw in the two metrics above; the model does well on recall but has quite poor precision.
+\end{itemize}
+
+Now we look at how these metrics behave under a continuum of thresholds:
+
+```{r, echo=FALSE, out.width="85%"}
+knitr::include_graphics("figures/threshold_metrics.pdf")
+```
+
+We zoom in on this plot for threshold values less than 0.0015 so that we can so that we can get a better visual of where exactly F1 is maximized.
+
+```{r, echo=FALSE, out.width="85%"}
+knitr::include_graphics("figures/threshold_metrics_zoom.pdf")
+```
+
+We see that we can sacrifice a small amount of recall to gain a large improvement in recall by increasing our threshold to a value around $0.001$ (which is a little less than double the empirical event-rate). At such a value for the threshold, we can achieve an F1 score as high as about $0.51$.
+
+We now assess calibration on the training data.
+
+```{r, echo=FALSE, out.width="75%"}
+knitr::include_graphics("figures/cal_plot.pdf")
+```
+
+The binned predictions and observed default rates generally lie along the straight line through the origin with small variation, which suggests that the model fits the training data well.
+
+# Limitations and Possible Improvements
+
+\begin{itemize}
+  \item Make another model for aggregated default counts (e.g. via Poisson regression) and use it predict default counts in stress testing scenarios.
+
+  \item Freddie Mac sampling bias
+
+  \item Competing risks
+    \begin{itemize}
+      \item Instead of treating prepayment as censoring, explicitly model it as a competing risk.
+    \end{itemize}
+
+  \item Definition of default event
+    \begin{itemize}
+      \item Loosen the definition to avoid forcing default to be an absorbing state (do not drop rows after default).
+      \item Use a count or indicator of previous defaults as a covariate in the model (instead of truncating data to enforce the absorbing state definition).
+    \end{itemize}
+
+  \item Variables to investigate or augment
+    \begin{itemize}
+      \item Try additional interaction terms.
+      \item Consider using some or all variables that enter loan pricing rather than the credit spread, which is derived from loan prices determined by another model.
+        \begin{itemize}
+          \item Freddie Mac does not provide this data, so it would need to be sourced elsewhere.
+        \end{itemize}
+      \item Build a separate model for dynamic home price prediction.
+        \begin{itemize}
+          \item Use the home price estimate to construct an alternative dynamic LTV or VTL.
+          \item Compare the full model using this estimate against the current model.
+        \end{itemize}
+      \item Macroeconomic uncertainty (e.g.\ JLNUM3M).
+      \item Policy uncertainty (e.g.\ USEPUINDXD). 
+      \item Try interactions or other transformations with DTI at origination (e.g. with loan purpose, occupancy status, LTV at origination, etc.) which may explain the convex non-monotone relationship with logit hazard that was observed.
+      \item Create an approximate dynamic DTI variable after origination.
+        \begin{itemize}
+          \item Use income and/or debt indices similarly to how HPI was used to estimate dynamic LTV.
+          \item This is more challenging than dynamic LTV estimation because:
+            \begin{itemize}
+              \item Both debt and income are dynamic, whereas only home value is dynamic for LTV.
+              \item Income distributions may exhibit greater skewness and kurtosis than home prices.
+            \end{itemize}
+        \end{itemize}
+      \item Try using the un-normalized current actual unpaid principal balance variable (\texttt{current\_actual\_upb}).
+    \end{itemize}
+
+  \item Dealing with class imbalance
+    \begin{itemize}
+      \item Try oversampling or importance sampling.
+    \end{itemize}
+    
+  \item Cross-Validation and Lasso for Variable Selection
+    \begin{itemize}
+      \item Use Lasso for a final stage of variable selection to see if any predictors can be dropped from the model, and use cross-validation for hyperparameters on a validation set (distinct from the final holdout test set).
+      \item Split the data into training and test sets at the start of the analysis so that outcome-driven EDA, feature selection, etc. are conducted exclusively on training data. This would strengthen reproducibility and better mirror a production re-calibration workflow.
+    \end{itemize}
+
+  \item Alternative models to compare
+    \begin{itemize}
+      \item Logistic regression with mixed effects to capture loan-specific variation (random effect for each loan $i$), a common panel-data approach that can improve standard error estimation. This is basically an alternative to using cluster-robust standard errors.
+      \item Poisson regression for the \emph{count} of defaults. Note: such a model for the counts could also be used for other purposes (e.g. stress-testing predictions at aggregate portfolio-level in different economic scenarios).
+      \item XGBoost or other modern classification models.
+      \item Neural networks with SHAP values for interpretability.
+    \end{itemize}
+\end{itemize}
+
+  
+  
+
+
+
+
+
