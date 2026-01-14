@@ -34,7 +34,7 @@
 - `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak-to-moderate positive association
     - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
 <p align="center">
-    <img src="figures/inv_eltv_1.png" width="300">
+    <img src="figures/inv_eltv_1.png" width="400">
 </p>
 
 **Borrower Risk at Origination (Loan-Dependent)**
@@ -43,8 +43,8 @@
 - `credit_score` (FICO): strong negative association  
 - `dti_missing` and `transf_dti`$=|\text{DTI}-15|$: capture underwriting/affordability effects
 <p align="center">
-    <img src="figures/cr_spread_1.png" width="300">
-    <img src="figures/credit_score_1.png" width="300"> 
+    <img src="figures/cr_spread_1.png" width="400">
+    <img src="figures/credit_score_1.png" width="400"> 
 </p>
 
 **Macroeconomic and Market-Based (Time-Dependent)**
@@ -52,8 +52,9 @@
 - `last_unrate_chg_pos`$=\max(\Delta_{12}\text{UR},0)$ (positive part of the YoY change in the unemployment rate): strong positive association  
 - `last_infl_yoy_low` (indicaator for inflation rate being at or below 2.5\%): shift in distribution of risk
 <p align="center">
-    <img src="figures/last_unrate_chg_pos_1.png" width="300">
-    <img src="figures/last_infl_yoy_low_1.png" width="300"> 
+    <img src="figures/last_vix_1.png" width="400">
+    <img src="figures/last_unrate_chg_pos_1.png" width="400">
+    <img src="figures/last_infl_yoy_low_1.png" width="400"> 
 </p>
 
 **Controls**
