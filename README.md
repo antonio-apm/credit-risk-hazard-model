@@ -49,30 +49,22 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 - `last_vix` (lagged CBOE Volatility Index): moderate-to-strong positive association
 - `last_unrate_chg_pos` (positive part of the YoY change in the unemployment rate): strong positive association  
 - `last_infl_yoy_low` (indicator for inflation rate being at or below 2.5\%): shift in distribution of risk
-<div style="display:flex; justify-content:center; gap:20px; flex-wrap:wrap;">
-
-  <figure style="margin:0; text-align:center;">
-    <img src="figures/last_vix_1.png" width="400">
-    <figcaption style="font-size:0.9em;">
-      (a) VIX 
-    </figcaption>
-  </figure>
-
-  <figure style="margin:0; text-align:center;">
-    <img src="figures/last_unrate_chg_pos_1.png" width="400">
-    <figcaption style="font-size:0.9em;">
-      (b) Max(YoY Change in Unemployment Rate, 0)
-    </figcaption>
-  </figure>
-
-  <figure style="margin:0; text-align:center;">
-    <img src="figures/last_infl_yoy_low_1.png" width="400">
-    <figcaption style="font-size:0.9em;">
-      (c) Low YoY Inflation Indicator
-    </figcaption>
-  </figure>
-
-</div>
+<table align="center">
+  <tr>
+    <td align="center">
+      <img src="figures/last_vix_1.png" width="400"><br>
+      <sub>(a) VIX (Volatility Index)</sub>
+    </td>
+    <td align="center">
+      <img src="figures/last_unrate_chg_pos_1.png" width="400"><br>
+      <sub>(b) Max(YoY Change in Unemployment Rate, 0)</sub>
+    </td>
+    <td align="center">
+      <img src="figures/last_infl_yoy_low_1.png" width="400"><br>
+      <sub>(c) Low YoY Inflation Indicator</sub>
+    </td>
+  </tr>
+</table>
 
 **Controls**
 - region, occupancy status, loan purpose, long-term loan indicator, and *baseline hazard control* using natural splines transformation of loan age with 2 degrees of freedom.
