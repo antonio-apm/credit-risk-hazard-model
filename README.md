@@ -10,7 +10,7 @@
 - This is designed for applications in credit portfolio monitoring (e.g. flag loans with rising risk) and account management (e.g. offer deals to stable borrowers), not for modeling "ever-default" from origination.
 - *Note:*
     - Additional summary points about the data and methodology are provided at the end of this README document.
-    - **Full report with mathematical model specification (LaTeX PDF):** [Mortgage-Credit-Risk-Regression.pdf](Mortgage-Credit-Risk-Regression.pdf).
+    - **Full technical report (LaTeX PDF):** [Mortgage-Credit-Risk-Regression.pdf](Mortgage-Credit-Risk-Regression.pdf).
 
 ## Data
 - **Freddie Mac Single-Family Loan-Level Dataset (SFLLD)**: vintages **2013, 2016, 2020**
