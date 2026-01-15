@@ -67,7 +67,7 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 </table>
 
 **Controls**
-- region, occupancy status, loan purpose, long-term loan indicator, and *baseline hazard control* using natural splines transformation of loan age with 2 degrees of freedom.
+- Region, occupancy status, loan purpose, long-term loan indicator, and *baseline hazard control* using natural splines transformation of loan age with 2 degrees of freedom.
 
 ## Performance Evaluation
 
