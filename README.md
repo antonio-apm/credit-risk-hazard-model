@@ -48,7 +48,7 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 - `cr_spread` (origination credit spread): strong positive association
     - Derived by deducting the yield on the 10-year Treasury at the time of origination from the interest rate on the loan at origination
 - `credit_score` (FICO): strong negative association  
-- `dti_missing` and `transf_dti` (DTI at origination): U-shaped (convex non-monotone) association
+- `dti_missing` and `transf_dti` (DTI at origination): moderate shift in distribution for missing DTI and the median-imputed DTI shows a V-shaped association with a minimum at around 15 DTI
 <p align="center">
     <img src="figures/cr_spread_1.png" width="400">
     <img src="figures/credit_score_1.png" width="400"> 
