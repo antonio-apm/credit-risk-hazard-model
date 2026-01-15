@@ -23,6 +23,12 @@
 - **Total size:** (before data cleaning and variable selection)
     - $\approx 18$ GB 
     - 300,000 loans (cohort of 100,000 loans for each vintage)
+  
+<p align="center">
+  <img src="figures/panel-data-sample-diagram_cropped.jpg" width="650">
+  <br>
+  <sub><i>Panel structure by origination vintage and time-based train/test split.</i></sub>
+</p>
 
 ## Key Predictors
 Some of the key predictors used in the model are summarized below. 
