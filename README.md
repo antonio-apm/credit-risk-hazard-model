@@ -37,7 +37,7 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 
 **Loan Performance (Loan- and Time-Dependent)**
 - `deliq_num` (current number of missed payments): very clear shift in distribution with each level, as expected
-    - This is the current "delinquency state". A loan can only reach a status of 3+ missed payments once it already missed 2 payments. 
+    - This is the current "delinquency state". 
 - `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak positive association
     - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
 <p align="center">
