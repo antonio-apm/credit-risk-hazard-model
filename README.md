@@ -105,6 +105,7 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 - Report is written in R Markdown; heavy computations are done in separate code-only R scripts and saved as RDS objects and figures. 
 - Key generated artifacts:
   - `objects/*.rds` (model outputs, tables)
+      - These are hidden from GitHub in the current version because some objects are very large, although all output is displayed in the full PDF report.
   - `figures/*` (EDA + evaluation plots)
 
 ## Additional Notes on Data and Methodology
