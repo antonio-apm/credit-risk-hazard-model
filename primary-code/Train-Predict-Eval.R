@@ -5,7 +5,7 @@
 setwd("C:/Projects-Code-Certificates/Credit-Risk-Mortgages")
 
 full_df <- readRDS("objects/full_df.rds")
-predictor_names <- readRDS("objects/predictor_names.rdf")
+predictor_names <- readRDS("objects/predictor_names.rds")
 
 # Load libraries
 library(tidyverse) # SQL-like data manipulation and more (e.g. dplyr)

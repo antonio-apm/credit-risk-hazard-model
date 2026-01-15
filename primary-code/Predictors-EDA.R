@@ -557,7 +557,7 @@ saveRDS(full_df, file="objects/full_df.rds")
 
 
 # Save vector of predictor names
-saveRDS(predictor_names, file="objects/predictor_names.rdf")
+saveRDS(predictor_names, file="objects/predictor_names.rds")
 
 rm(list = ls())
 gc()
