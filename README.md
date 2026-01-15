@@ -1,16 +1,17 @@
 # Credit Risk Analysis: Retail Mortgage Loans
 ## **State-Dependent Logistic Hazard Model for 1-Month-Ahead Default Prediction**
+**Full technical report (LaTeX PDF):** [Mortgage-Credit-Risk-Regression.pdf](Mortgage-Credit-Risk-Regression.pdf).
 
 *Antonio Melacini - December 2025*
+
+
 
 ## Overview
 - This project builds an early-warning probability of default (PD) model that predicts whether a mortgage will default in the next month using information available in the current month. We define "default" as the event of a loan having 3+ missed payments.
 - The model is trained on loan-month panel data that is comprised of loan origination characteristics, monthly loan performance, and monthly macroeconomic variables.
 - The model is state-dependent in the sense that one of the predictors is the current delinquency state (number of missed payments).
 - This is designed for applications in credit portfolio monitoring (e.g. flag loans with rising risk) and account management (e.g. offer deals to stable borrowers), not for modeling "ever-default" from origination.
-- *Note:*
-    - Additional summary points about the data and methodology are provided at the end of this README document.
-    - **Full technical report (LaTeX PDF):** [Mortgage-Credit-Risk-Regression.pdf](Mortgage-Credit-Risk-Regression.pdf).
+- *Note:* additional summary points about the data and methodology are provided at the end of this README document.
 
 ## Data
 - **Freddie Mac Single-Family Loan-Level Dataset (SFLLD)**: vintages **2013, 2016, 2020**
