@@ -14,7 +14,7 @@
 
 ## Data
 - **Freddie Mac Single-Family Loan-Level Dataset (SFLLD)**: vintages **2013, 2016, 2020**
-- Train/test split:
+- Train/test split (70/30):
   - **Train:** 2013/02 $-$ 2021/09  
   - **Test:** 2021/10 $-$ 2025/05  
 - All loans are fixed-rate mortgages (FRMs) without prepayment penalties (non-PPM) in the sample.
