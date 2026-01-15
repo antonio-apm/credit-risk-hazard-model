@@ -53,15 +53,15 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
   <tr>
     <td align="center">
       <img src="figures/last_vix_1.png" width="400"><br>
-      <sub>(a) VIX (Volatility Index)</sub>
+      <sub> VIX (Volatility Index)</sub>
     </td>
     <td align="center">
       <img src="figures/last_unrate_chg_pos_1.png" width="400"><br>
-      <sub>(b) Max(YoY Change in Unemployment Rate, 0)</sub>
+      <sub> Max(YoY Change in Unemployment Rate, 0)</sub>
     </td>
     <td align="center">
       <img src="figures/last_infl_yoy_low_1.png" width="400"><br>
-      <sub>(c) Low YoY Inflation Indicator</sub>
+      <sub> Low YoY Inflation Indicator</sub>
     </td>
   </tr>
 </table>
