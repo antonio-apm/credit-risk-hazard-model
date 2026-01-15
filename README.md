@@ -7,7 +7,7 @@
 - This project builds an early-warning probability of default (PD) model that predicts whether a mortgage will default in the next month using information available in the current month. We define "default" as the event of a loan having 3+ missed payments.
 - The model is trained on loan-month panel data that is comprised of loan origination characteristics, monthly loan performance, and monthly macroeconomic variables.
 - The model is state-dependent in the sense that one of the predictors is the current delinquency state (number of missed payments).
-- This is designed for applications in credit portfolio monitoring (e.g. flag loans with rising risk) and account management (e.g. offer deals to stable borrowers), not "ever-default" origination pricing.
+- This is designed for applications in credit portfolio monitoring (e.g. flag loans with rising risk) and account management (e.g. offer deals to stable borrowers), not for modeling "ever-default" from origination.
 - *Note:*
     - Additional summary points about the data and methodology are provided at the end of this README document.
     - **Full report with mathematical model specification (LaTeX PDF):** [Mortgage-Credit-Risk-Regression.pdf](Mortgage-Credit-Risk-Regression.pdf).
