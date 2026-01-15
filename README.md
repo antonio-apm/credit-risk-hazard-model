@@ -18,12 +18,9 @@
   - **Train:** 2013/02 $-$ 2021/09  
   - **Test:** 2021/10 $-$ 2025/05  
 - All loans are fixed-rate mortgages (FRMs) without prepayment penalties (non-PPM) in the sample.
-- **Total size:**
-    - roughly 18 GB before data cleaning and variable selection
-    - roughly 300,000 loans; cohort of 100,000 loans for each vintage
-- Missing DTI handled with:
-  - `dti_missing` indicator
-  - median-imputed DTI used inside `transf_dti = |DTI − 15|`
+- **Total size:** (before data cleaning and variable selection)
+    - $\approx 18$ GB 
+    - 300,000 loans (cohort of 100,000 loans for each vintage)
 
 ## Key Predictors
 Some of the key predictors used in the model are summarized below. 
@@ -52,35 +49,37 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 - `last_vix` (lagged CBOE Volatility Index): moderate-to-strong positive association
 - `last_unrate_chg_pos` (positive part of the YoY change in the unemployment rate): strong positive association  
 - `last_infl_yoy_low` (indicator for inflation rate being at or below 2.5\%): shift in distribution of risk
-<p align="center">
-  <figure style="display:inline-block; margin:10px;">
+<div style="display:flex; justify-content:center; gap:20px; flex-wrap:wrap;">
+
+  <figure style="margin:0; text-align:center;">
     <img src="figures/last_vix_1.png" width="400">
-    <figcaption style="text-align:center; font-size:0.9em;">
-      (a) VIX (Volatility Index)
+    <figcaption style="font-size:0.9em;">
+      (a) VIX 
     </figcaption>
   </figure>
 
-  <figure style="display:inline-block; margin:10px;">
+  <figure style="margin:0; text-align:center;">
     <img src="figures/last_unrate_chg_pos_1.png" width="400">
-    <figcaption style="text-align:center; font-size:0.9em;">
+    <figcaption style="font-size:0.9em;">
       (b) Max(YoY Change in Unemployment Rate, 0)
     </figcaption>
   </figure>
 
-  <figure style="display:inline-block; margin:10px;">
+  <figure style="margin:0; text-align:center;">
     <img src="figures/last_infl_yoy_low_1.png" width="400">
-    <figcaption style="text-align:center; font-size:0.9em;">
+    <figcaption style="font-size:0.9em;">
       (c) Low YoY Inflation Indicator
     </figcaption>
   </figure>
-</p>
+
+</div>
 
 **Controls**
 - region, occupancy status, loan purpose, long-term loan indicator, and *baseline hazard control* using natural splines transformation of loan age with 2 degrees of freedom.
 
 ## Performance Evaluation
 
-### Key Metrics on Test-Set Predictions
+### Key Metrics on Test Set Predictions
 <p align="center"> 
     <img src="figures/roc_curve_1.png" width="450"> 
     <img src="figures/ks_plot_1.png" width="450">
@@ -109,7 +108,6 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
   - `figures/*` (EDA + evaluation plots)
 
 ## Additional Notes on Data and Methodology
-- In order to have a sufficient number of "events" (defaults) in the data, we define default as the event of a loan having 3+ missed payments.
 - Macroeconomic variables are lagged to prevent leakage since the data for month $t$ is published in month $t+1$.
 - Due to the panel structure of the data, we use cluster-robust standard errors (clustered on loan IDs) to account for within-loan dependence over time.
 - There is inherent censoring at data cutoff and enforced right-truncation by treating prepayment as censoring.
