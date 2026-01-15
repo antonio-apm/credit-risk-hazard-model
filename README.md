@@ -71,7 +71,7 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 
 ## Performance Evaluation
 
-### Key Metrics on Test Set Predictions
+### Plots of Key Metrics on Test Set Predictions
 <p align="center"> 
     <img src="figures/roc_curve_1.png" width="450"> 
     <img src="figures/ks_plot_1.png" width="450">
