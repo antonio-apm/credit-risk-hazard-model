@@ -36,7 +36,7 @@ Some of the key predictors used in the model are summarized below.
 The scatterplots show the covariates on the x-axis plotted against the logit transform of the empirical hazard rate on the y-axis. For categorical predictors, they are visualized with grouped Kernel Density Estimates (KDEs) of the logit transform of the empirical hazard rate.
 
 **Loan Performance (Loan- and Time-Dependent)**
-- `deliq_num` (current number of missed payments): very clear non-overlapping shift in distribution with each level
+- `deliq_num` (current number of missed payments): very clear shift in distribution with each level, as expected
     - A loan can only reach 3 missed payments once it already missed 2 payments. This is the current "delinquency state".
 - `last_vtl_est` (estimated value-to-loan ratio, proxy for equity): weak positive association
     - Derived from the LTV ratio at origination and aggregate monthly growth in home prices measured with the Home Price Index (HPI).
