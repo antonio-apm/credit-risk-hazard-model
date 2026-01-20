@@ -69,33 +69,42 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Overview
 
-We create a 1-month-ahead probability of default (PD) model using logistic regression with panel data comprised of loan origination characteristics, monthly loan performance variables and macroeconomic variables. That is, using month-level data, we use information available at time $t$ (including information from origination) to predict default at time $t+1$. One of the covariates we used is the rolling count of delinquencies (missed payments) up to the current time, which is effectively what makes the regression a state-dependent model\footnote{In fact, the model could be extended by fitting the same regression to other definitions of default using the other states (1 missed payment, 2 missed payments), which would make that collection of models able to represent a 3-state time- and loan-dependent Markov transition matrix.}. Due to the inclusion of these covariates, the model is best interpreted as an early-warning PD model useful for credit portfolio monitoring (e.g. detect loans at high risk of default) and account management (e.g. offer deals to stable borrowers)\footnote{This is not a model for the probability that a loan ever defaults using using origination data only, which would be a tool more useful for loan pricing than ongoing portfolio management.}.
+We create a 1-month-ahead probability of default (PD) model using logistic regression with panel data comprised of loan origination characteristics, monthly loan performance variables and macroeconomic variables. That is, using month-level data, we use information available at time $t$ (including information from origination) to predict default at time $t+1$. We use loan-clustered robust standard errors to account for unobserved heterogeneity. One of the covariates we used is the rolling count of delinquencies (missed payments) up to the current time, which is effectively what makes the regression a state-dependent model\footnote{In fact, the model could be extended by fitting the same regression to other definitions of default using the other states (1 missed payment, 2 missed payments), which would make that collection of models able to represent a 3-state time- and loan-dependent Markov transition matrix.}. Due to the inclusion of these covariates, the model is best interpreted as an early-warning PD model useful for credit portfolio monitoring (e.g. detect loans at high risk of default) and account management (e.g. offer deals to stable borrowers)\footnote{This is not a model for the probability that a loan ever defaults using using origination data only, which would be a tool more useful for loan pricing than ongoing portfolio management.}.
 
-We face natural right-censoring at the data cutoff date (the event status in month $T+1$ is unobserved for the final observed month $T$). In addition, to enforce an absorbing default state under our simplified default definition (3+ missed payments), we truncate each loan's panel after it's first default month. Due to this, we implicitly condition on the loan surviving up to the current time, so we can also view the regression as a hazard rate model. 
+## Why Logistic Regression?
 
-We form a sample by combining data from 2013, 2016 and 2020 vintages sourced from the Freddie Mac Single Family Loan-Level Dataset (SFLLD). These origination years are chosen to provide a sample of loans originating in a variety of macroeconomic environments and to help identify the possible effects of loan age\footnote{Loan age is the natural measure of "time" for a specific loan.} separately from calendar time.
+Tree-based or ML models could potentially improve raw predictive performance, but for this application the marginal gains are often outweighed by reduced interpretability, stability, and governance complexity. Logistic regression provides a strong baseline that aligns with the hazard structure and allows clear economic interpretation.
 
-We do a first pass of variable selection by including economically justified covariates and visually inspecting the empirical relationships between our covariates and the logistic transform of the hazard. Next, we check if we can drop any unnecessary covariates using Lasso (L1 regularization). After variable selection, we use a time-based 70/30 split to train the model on the training set and evaluate the performance on the held-out test set. The training set corresponds to months from 2013/02 to 2021/09, and the test set corresponds to months from 2021/10 to 2025/05.
+## Censoring
+
+We face natural right-censoring at the data cutoff date (the event status in month $T+1$ is unobserved for the final observed month $T$). In addition, to enforce an absorbing default state under our simplified default definition (3+ missed payments), we truncate each loan's panel after its first default month. Due to this, we implicitly condition on the loan surviving up to the current time, so we can also view the regression as a hazard rate model. 
+
+## Data Source
+
+We form a sample by combining data from 2013, 2016 and 2020 vintages sourced from the Freddie Mac Single Family Loan-Level Dataset (SFLLD) which can be found at [SFLLD Site](https://www.freddiemac.com/research/datasets/sf-loanlevel-dataset). These origination years are chosen to provide a sample of loans originating in a variety of macroeconomic environments and to help identify the possible effects of loan age\footnote{Loan age is the natural measure of "time" for a specific loan.} separately from calendar time.
+
+## Model Development Workflow
+
+Predictors for next-month PD are selected based on economic justification and empirical assessment of their relationship with the log-odds of default. For correlated covariates, we assess multicollinearity and retain a single representative predictor to improve model stability and interpretability. After variable selection, we adopt a time-based 70/30 split, training the model on observations from February 2013 to September 2021 and evaluating performance on a held-out test set covering October 2021 to May 2025.
 
 # Model Definition
 
 We define the event of default as $90+$ days past due ($3+$ missed monthly payments). Some borrowers never make another monthly payment after "default", although there are also some\footnote{Approximately $10\%$ of loans in our data have this property.} borrowers that subsequently cure (return to $<90$ days past due) after "defaulting" and then possibly "default" again. We wish to define default as an absorbing state, meaning that a lender remains in default once they default. To enforce this, for each loan we drop the rows for months following the month of default. This simplified definition allows us to have more cases of "default" than if we only included actual defaults which never cured.
 
-Also note that we treat prepayment as a right-censoring event. Specifically, once a loan prepays, it permanently exists the risk set for default, and we accordingly drop the observation corresponding to the prepayment month as well as all subsequent months for that loan. This is the approach of modeling cause-specific default hazard, treating prepayment as an independent\footnote{When we say independence here, we mean that we assume prepayment and default are conditionally independent given the covariates in the model.} censoring mechanism rather than explicitly modeling competing risks.
+Also note that we treat prepayment as a right-censoring event. Specifically, once a loan prepays, it permanently exits the risk set for default, and we accordingly drop the observation corresponding to the prepayment month as well as all subsequent months for that loan. This is the approach of modeling cause-specific default hazard, treating prepayment as an independent\footnote{When we say independence here, we mean that we assume prepayment and default are conditionally independent given the covariates in the model.} censoring mechanism rather than explicitly modeling competing risks.
 
 We will fit the following logistic regression model (Binomial GLM with canonical link):
 $$
 \begin{aligned}
-(Y_{it}\Big|\F_{it})&\sim\Ber(\pi_{it})~~~\text{independently} \\
+(Y_{it}|X_{it},Z_t)&\sim\Ber(\pi_{it}) \\
 \logit(\pi_{it}) &= X_{it}^T\beta^{(L)} +Z_t^T\beta^{(M)}
 \end{aligned}
 $$
 where:
 \begin{itemize}
-  \item $\logit(\pi)=\ln\Big(\pi/(1-\pi) \Big)$ is the logistic ("log odds") function, 
+  \item $\logit(p)=\ln\Big(p/(1-p) \Big)$ is the logistic ("log odds") function, 
   \item $Y_{it}=\I[\text{loan }i\text{ defaults in month }t+1]$, 
-  \item $\F_{it}=\sigma\Big((X_{is},Z_s)_{s\leq t}\Big)$ is the sigma-field generated by the covariates for loan $i$ up to time $t$ (which can be thought of as the available information pertaining to loan $i$ up to time $t$), 
-  \item $\pi_{it}=\P(Y_{it}=1|\F_{it})=\text{PD}_{it}^\text{1mo}$ is the probability of default in month $t+1$ (given survival up to time $t$ and the information for loan $i$ up to time $t$),
+  \item $\pi_{it}=\P(Y_{it}=1|X_{it},Z_t)=\text{PD}_{it}^\text{1mo}$ is the probability of default in month $t+1$ (given survival up to time $t$ and the covariates for loan $i$ up to time $t$),
   \item $X_{it}$ is a vector of covariates for loan $i$ at month $t$, 
   \item $\beta^{(L)}$ is the parameter vector for the loan-specific associations, 
   \item $Z_t$ is a vector of exogenous macroeconomic covariates at month $t$ (appropriately lagged so that they are observed before $t$), and
@@ -105,19 +114,19 @@ where:
 ## Hazard Model View
 This can also be viewed as a discrete hazard model:
 
-Let $T_i\in\{0,1,2,\dots\}$ be the survival time (time of default; first time loan is 90+ days past due) for loan $i$.
+Let $T_i\in\{1,2,3\dots\}$ be the month of default for loan $i$.
 The covariate-dependent hazard (instantaneous risk) function for loan $i$ at month $t+1$ is
 $$\begin{aligned}
-h_i(t+1|\F_{it})&=\P(T_i=t+1|T_i\geq t +1, \F_{it}) \\
-&= \P(\text{default in month }t+1|\text{no default as of month }t, \F_{it}) \\
-&= \P(Y_{it}=1|\F_{it}) \\
+h_i(t+1|X_{it},Z_t)&=\P(T_i=t+1|T_i\geq t +1, X_{it},Z_t) \\
+&= \P(\text{default in month }t+1|\text{no default as of month }t, X_{it},Z_t) \\
+&= \P(Y_{it}=1|X_{it},Z_t) \\
 &= \pi_{it}
 \end{aligned}$$
 
 This interpretation is valid because we removed rows for loans in the months after they defaulted\footnote{Since "default" was defined as 90+ DPD, this means we removed observations in months $t+1,t+2,\dots$ after $Y_{it}=1$ even if there may be some loans which ended up returning to a non-default state.} and we dropped the final month of censored observations\footnote{At the final month in our dataset, whether or not a loan defaults next month is unknown.}, so each loan-month observation represents a period during which the loan is actually at risk of default.
 
 ## Independence and Inference
-We use the standard GLM likelihood (assuming full indepndence) as a working model for the mean response (one-month ahead default probability). Cross-loan independence is a plausible assumption after conditioning on macro covariates, although residual within-loan dependence may remain due to unobserved borrower and servicing effects. Under correct specification of the conditional mean $\E(Y_{it}|\F_{it})=\pi_{it}$, the MLE remains a good estimator, so point estimation and prediction are okay. However, naive standard errors can be biased under un-modeled within-loan dependence, so for confidence intervals we use loan-clustered robust standard errors (CRSEs). 
+We use the standard GLM likelihood (assuming full indepndence) as a working model for the mean response (one-month ahead default probability). Cross-loan independence is a plausible assumption after conditioning on macro covariates, although residual within-loan dependence may remain due to unobserved borrower and servicing effects. Under correct specification of the conditional mean $\E(Y_{it}|X_{it},Z_t)=\pi_{it}$, the MLE remains a good estimator, so point estimation and prediction are okay. However, naive standard errors can be biased under un-modeled within-loan dependence, so for confidence intervals we use loan-clustered robust standard errors (CRSEs). 
 
 
 ```{r, include=FALSE}
@@ -161,8 +170,12 @@ knitr::include_graphics(
   )
 ```
 
-```{r, echo=FALSE, out.width="50%"}
-knitr::include_graphics(c("figures/vix_ts.pdf", "figures/infl_ts.pdf"))
+```{r, echo=FALSE, out.width="85%"}
+knitr::include_graphics("figures/vix_ts.pdf")
+```
+
+```{r, echo=FALSE, out.width="85%"}
+knitr::include_graphics("figures/infl_ts.pdf")
 ```
 
 ```{r, echo=FALSE, out.width="100%"}
@@ -174,9 +187,11 @@ Macroeconomic variables are included in the model as exogenous time-varying cova
 It is necessary to lag the macroeconomic features by (at least) one month because the data for month $t-1$ is typically only released during month $t$.
 
 
-# EDA, Variable Selection and Feature Engineering
+# EDA, Variable Selection and Transformations
 
 ## Univariate Survival Analysis 
+
+The Kaplan-Meier estimate of the cumulative incidence function is provided below. In our context, cumulative incidence is the cumulative PD.
 
 ```{r, echo=FALSE, out.width="100%"}
 knitr::include_graphics("figures/km_cpd_plot.pdf")
@@ -185,11 +200,20 @@ knitr::include_graphics("figures/km_cpd_plot.pdf")
 The estimated cumulative PD (eCPD) curve shows spikes at around 40-50 months and 75-90 months, which is suspected to be the effects of macroeconomic shocks from those periods of time (i.e. COVID). For the 2016 origintion sample, a loan age of 40-50 months roughly corresponds to the time period of 2020 Q2 on average, and similarly for the 2013 origination sample, a loan age of 75-90 months roughly corresponds to the time period of 2020 Q2 on average. If we look more closely at the very start of the eCPD curve for small loan ages, we see that it is very subtly increasing at a faster pace than the prolonged steady rates of growth we see for later months, which aligns with the fact that the 2020 origination sample was in the calendar time period of 2020 Q1-Q2 for these loan ages. 
 
 The goal is to use macroeconomic covariates such as the unemployment rate and the house price index in our PD model so that we can try to capture the effects of macro shocks on PD and so that we can identify the possible effect of other variables like loan age without the issue of confounding. 
+\newpage
+
+## Feature Standardization
+
+Continuous predictors are used in their original units in the current analysis. In production credit risk settings, continuous features are typically standardized during estimation to improve numerical stability and comparability across predictors, with scaling parameters fixed using the training data sample statistics and treated as part of the model. Distributional shift would be monitored (e.g. using the Population Stability Index), with model refitting considered when thresholds are exceeded as opposed to rolling re-standardization.
 
 ## Identifying Possible Age of Loan Effects
 
 ```{r, echo=FALSE, out.width="100%"}
-knitr::include_graphics(c("figures/age_haz.pdf", "figures/age_haz_year.pdf"))
+knitr::include_graphics("figures/age_haz.pdf")
+```
+
+```{r, echo=FALSE, out.width="100%"}
+knitr::include_graphics("figures/age_haz_year.pdf")
 ```
 
 ```{r, echo=FALSE, out.width="100%"}
@@ -526,9 +550,11 @@ The estimated 1-month ahead probability of default for this loan under these mac
 
 Since we used splines for the loan age predictor it is less easily interpretable, so we create a partial dependence plot of the loan age variable on the predicted PD so that we can visualize how age is being used in the model. 
 
-```{r, echo=FALSE, out.width="100%"}
+```{r, echo=FALSE, out.width="80%"}
 knitr::include_graphics("figures/age_pred.pdf")
 ```
+
+## Cluster-Robust Inference
 
 As mentioned in the overview, we will use the cluster-robust covariance estimator for standard errors, which is why we haven't been using the regular standard errors from the model summary. 
 
@@ -542,7 +568,7 @@ The SEs for most parameters grow by a fairly small amount (about 0\% to 15\%) an
 
 It's not easily visible on the plot, but there are also a few SEs which decrease by a very small amount.
 
-Overall, there are no massive increases in standard errors, suggesting that the model was already modeling within-loan dependence decently well using the covariates. Now that we have more reliable standard errors for our parameters we can include confidence intervals in some of our interpretation, which we provide an example of below. 
+Overall, the standard errors do not increase substantially, suggesting that accounting for within-loan dependence does not materially alter the precision of the estimated effects. Nevertheless, the increase is large enough to warrant the use of cluster-robust standard errors for inference. With these more reliable uncertainty estimates, we report the confidence interval for a selected parameter below.
 
 ```{r, include=FALSE}
 ci <- readRDS("objects/credit_score_rel_ci.rds")
@@ -568,6 +594,8 @@ The ROC curve is highly bowed to the top-left corner and we have a very high AUC
 The Kolmogorov-Smirnoff plot shows very large maximum separation (KS statistic) of about 98\%, suggesting that the model separates the classes well. 
 
 Since our outcome is a rare event, we specifically look at the evaluation metrics when we use the empirical event rate from the training data as the threshold.
+
+\newpage
 
 ```{r, echo=FALSE, results='asis'}
 conf_mat <- readRDS("objects/conf_mat.rds")
@@ -610,66 +638,37 @@ The binned predictions and observed default rates generally lie along the straig
 # Limitations and Possible Improvements
 
 \begin{itemize}
-  \item Make another model for aggregated default counts (e.g. via Poisson regression) and use it predict default counts in stress testing scenarios.
 
-  \item Freddie Mac sampling bias
+  \item \textbf{Aggregation and stress testing.}  
+  The current model focuses on loan-level next-month PD. An alternative or complementary approach would model aggregated default counts directly (e.g.\ via Poisson or quasi-Poisson regression), which may be more suitable for portfolio-level stress testing and scenario analysis.
 
-  \item Competing risks
-    \begin{itemize}
-      \item Instead of treating prepayment as censoring, explicitly model it as a competing risk.
-    \end{itemize}
+  \item \textbf{Data limitations and sampling bias.}  
+  The analysis relies on the Freddie Mac Single-Family Loan-Level Dataset, which reflects agency-specific underwriting standards and may not be fully representative of the broader mortgage market.
 
-  \item Definition of default event
-    \begin{itemize}
-      \item Loosen the definition to avoid forcing default to be an absorbing state (do not drop rows after default).
-      \item Use a count or indicator of previous defaults as a covariate in the model (instead of truncating data to enforce the absorbing state definition).
-    \end{itemize}
+  \item \textbf{Competing risks.}  
+  Prepayment is treated as censoring in the current framework. A more refined approach would explicitly model prepayment as a competing risk rather than assuming non-informative censoring.
 
-  \item Variables to investigate or augment
-    \begin{itemize}
-      \item Try additional interaction terms.
-      \item Consider using some or all variables that enter loan pricing rather than the credit spread, which is derived from loan prices determined by another model.
-        \begin{itemize}
-          \item Freddie Mac does not provide this data, so it would need to be sourced elsewhere.
-        \end{itemize}
-      \item Build a separate model for dynamic home price prediction.
-        \begin{itemize}
-          \item Use the home price estimate to construct an alternative dynamic LTV or VTL.
-          \item Compare the full model using this estimate against the current model.
-        \end{itemize}
-      \item Macroeconomic uncertainty (e.g.\ JLNUM3M).
-      \item Policy uncertainty (e.g.\ USEPUINDXD). 
-      \item Try interactions or other transformations with DTI at origination (e.g. with loan purpose, occupancy status, LTV at origination, etc.) which may explain the convex non-monotone relationship with logit hazard that was observed.
-      \item Create an approximate dynamic DTI variable after origination.
-        \begin{itemize}
-          \item Use income and/or debt indices similarly to how HPI was used to estimate dynamic LTV.
-          \item This is more challenging than dynamic LTV estimation because:
-            \begin{itemize}
-              \item Both debt and income are dynamic, whereas only home value is dynamic for LTV.
-              \item Income distributions may exhibit greater skewness and kurtosis than home prices.
-            \end{itemize}
-        \end{itemize}
-      \item Try using the un-normalized current actual unpaid principal balance variable (\texttt{current\_actual\_upb}).
-    \end{itemize}
+  \item \textbf{Definition of default events.}  
+  Default is currently treated as an absorbing state. Future work could relax this assumption by allowing loans to re-enter non-default states and incorporating indicators or counts of prior defaults as covariates.
 
-  \item Dealing with class imbalance
-    \begin{itemize}
-      \item Try oversampling or importance sampling.
-    \end{itemize}
-    
-  \item Cross-Validation and Lasso for Variable Selection
-    \begin{itemize}
-      \item Use Lasso for a final stage of variable selection to see if any predictors can be dropped from the model, and use cross-validation for hyperparameters on a validation set (distinct from the final holdout test set).
-      \item Split the data into training and test sets at the start of the analysis so that outcome-driven EDA, feature selection, etc. are conducted exclusively on training data. This would strengthen reproducibility and better mirror a production re-calibration workflow.
-    \end{itemize}
+  \item \textbf{Feature set expansion and dynamic covariates.}  
+  Several potentially important extensions were not explored, including:
+  \begin{itemize}
+    \item additional interaction terms motivated by economic intuition;
+    \item alternative constructions of borrower leverage, such as dynamic LTV based on modeled home price evolution;
+    \item approximate post-origination DTI measures using income and debt indices;
+    \item additional macroeconomic and policy uncertainty indicators.
+  \end{itemize}
 
-  \item Alternative models to compare
-    \begin{itemize}
-      \item Logistic regression with mixed effects to capture loan-specific variation (random effect for each loan $i$), a common panel-data approach that can improve standard error estimation. This is basically an alternative to using cluster-robust standard errors.
-      \item Poisson regression for the \emph{count} of defaults. Note: such a model for the counts could also be used for other purposes (e.g. stress-testing predictions at aggregate portfolio-level in different economic scenarios).
-      \item XGBoost or other modern classification models.
-      \item Neural networks with SHAP values for interpretability.
-    \end{itemize}
+  \item \textbf{Class imbalance.}  
+  Defaults are rare events in short-horizon prediction. While the current approach relies on likelihood-based estimation, alternative weighting or sampling strategies could be explored, with careful attention to calibration and interpretability.
+
+  \item \textbf{Variable selection and validation.}  
+  Variable selection was guided by economic reasoning and empirical diagnostics. A more formal procedure could incorporate L1-penalized regression (LASSO) and cross-validation on a dedicated validation set, while preserving a strictly held-out test period for final evaluation.
+
+  \item \textbf{Alternative modeling frameworks.}  
+  While logistic regression was chosen for interpretability and alignment with discrete-time hazard modeling, future work could benchmark against mixed-effects logistic models to capture unobserved loan heterogeneity, as well as more flexible neural networks or tree-based approaches as challengers rather than replacements.
+
 \end{itemize}
 
   
