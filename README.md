@@ -110,7 +110,7 @@ The scatterplots show the covariates on the x-axis plotted against the logit tra
 
 ## Additional Notes on Data and Methodology
 - Macroeconomic variables are lagged to prevent leakage since the data for month $t$ is published in month $t+1$.
-- Due to the panel structure of the data, we use cluster-robust standard errors (clustered on loan IDs) to account for within-loan dependence over time.
+- Due to the panel structure of the data, we use cluster-robust standard errors (clustered on loan IDs) to obtain valid inference in the presence of unobserved within-loan heterogeneity.
 - There is inherent censoring at data cutoff and enforced right-truncation by treating prepayment as censoring.
 
 
