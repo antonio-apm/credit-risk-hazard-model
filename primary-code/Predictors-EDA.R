@@ -431,7 +431,23 @@ num_all <- full_df %>%
 
 (p_rec <- num_events/num_all)
 
-train_sample <- function(df=full_df, p=p_rec) {
+
+# train/test split to avoid leakage in variable selection/transformation
+all_dates <- full_df %>% pull(date) %>% unique()
+train_prop <- 0.7
+n <- length(all_dates)
+train_n <- floor(n * train_prop)
+
+train_dates <- all_dates[1:train_n]
+test_dates <- all_dates[(train_n+1):n]
+
+train_df <- full_df %>% 
+  filter(date %in% train_dates)
+test_df <- full_df %>% 
+  filter(date %in% test_dates)
+
+
+train_sample <- function(df=train_df, p=p_rec) {
   events_df <- df %>% filter(y == 1)
   event_ids <- events_df %>% pull(loan_sequence_number) %>% unique()
   events_df <- df %>% filter(loan_sequence_number %in% event_ids)
@@ -440,7 +456,11 @@ train_sample <- function(df=full_df, p=p_rec) {
   return( bind_rows(events_df, nonevents_df) )
 }
 
+
+
+
 set.seed(10) # reproducibility
+
 sample_df <- train_sample(p=0.06)
 
 
