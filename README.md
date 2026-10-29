@@ -1,6 +1,5 @@
-# Credit Risk Analysis: Retail Mortgage Loans
-## **State-Dependent Logistic Hazard Model for 1-Month-Ahead Default Prediction**
-**Full technical report (LaTeX PDF):** 
+# Dynamic Regression Model for Probability of Default
+**Full technical report with entire model development process (data analysis, predictor transformations, etc.)** 
 [Mortgage-Credit-Risk-Regression.pdf](Mortgage-Credit-Risk-Regression.pdf).
 
 *Antonio Melacini - December 2025*
